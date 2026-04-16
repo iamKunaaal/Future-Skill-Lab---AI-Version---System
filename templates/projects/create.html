@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}New Project — Neorise FSL{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <!-- Back -->
+  <a href="{% url 'dashboard' %}" class="inline-flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors rounded-full px-4 py-2 hover:bg-surface-container-low -ml-4 mb-8">
+    <span class="material-symbols-outlined text-xl">arrow_back</span>
+    <span class="font-medium text-sm">Back to Projects</span>
+  </a>
+
+  <!-- Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold tracking-tight text-on-surface mb-2">Create New Project</h1>
+    <p class="text-on-surface-variant">AI will generate a Weekly Brief + 80-min Session Breakdown for all 18 Block Periods.</p>
+  </div>
+
+  {% if error %}
+  <div class="mb-6 p-4 bg-error-container/30 border border-error/20 rounded-xl text-sm text-error font-medium">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form method="POST" class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/10 p-8 space-y-6">
+    {% csrf_token %}
+
+    <!-- Topic -->
+    <div>
+      <label class="block text-sm font-semibold text-on-surface mb-2">Project Topic <span class="text-error">*</span></label>
+      <input type="text" name="topic" value="{{ post.topic|default:'' }}"
+             placeholder="e.g. Smart, Ethical Marketing in the Future Digital Economy"
+             class="w-full border border-outline-variant rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+             required>
+      <p class="text-xs text-on-surface-variant mt-1.5">This topic will be injected into every session prompt.</p>
+    </div>
+
+    <!-- Grade -->
+    <div>
+      <label class="block text-sm font-semibold text-on-surface mb-2">Grade <span class="text-error">*</span></label>
+      <select name="grade"
+              class="w-full border border-outline-variant rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+              required>
+        <option value="">Select grade...</option>
+        <option value="Grade 6"  {% if post.grade == "Grade 6"  %}selected{% endif %}>Grade 6</option>
+        <option value="Grade 7"  {% if post.grade == "Grade 7"  %}selected{% endif %}>Grade 7</option>
+        <option value="Grade 8"  {% if post.grade == "Grade 8"  %}selected{% endif %}>Grade 8</option>
+        <option value="Grade 9"  {% if post.grade == "Grade 9"  %}selected{% endif %}>Grade 9</option>
+        <option value="Grade 10" {% if post.grade == "Grade 10" %}selected{% endif %}>Grade 10</option>
+        <option value="Grade 11" {% if post.grade == "Grade 11" %}selected{% endif %}>Grade 11</option>
+        <option value="Grade 12" {% if post.grade == "Grade 12" %}selected{% endif %}>Grade 12</option>
+      </select>
+    </div>
+
+    <!-- Subject Track -->
+    <div>
+      <label class="block text-sm font-semibold text-on-surface mb-2">Subject Track <span class="text-error">*</span></label>
+      <div class="grid grid-cols-3 gap-3">
+        {% for value, label in track_choices %}
+        <label class="relative cursor-pointer">
+          <input type="radio" name="subject_track" value="{{ value }}"
+                 {% if post.subject_track == value %}checked{% endif %}
+                 class="peer sr-only" required>
+          <div class="peer-checked:border-primary peer-checked:bg-primary/5 peer-checked:text-primary border-2 border-outline-variant rounded-xl px-4 py-3 text-center transition-all hover:border-primary/40">
+            <p class="text-sm font-semibold">{{ label }}</p>
+            <p class="text-[10px] text-on-surface-variant mt-0.5">
+              {% if value == 'LL' %}Biology & Ecology{% elif value == 'MM' %}Engineering & Tech{% else %}Society & Services{% endif %}
+            </p>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Tech Competency -->
+    <div>
+      <label class="block text-sm font-semibold text-on-surface mb-1">Tech Competency <span class="text-error">*</span></label>
+      <p class="text-xs text-on-surface-variant mb-3">Select one or more — these replace the tech slot across all 18 sessions.</p>
+
+      <!-- Selected tags -->
+      <div id="selected-tags" class="flex flex-wrap gap-2 mb-3 min-h-0"></div>
+
+      <div class="border border-outline-variant/50 rounded-xl overflow-hidden divide-y divide-outline-variant/30">
+
+        {% for group_key, group_label, group_sub, group_items in tech_grid %}
+        <div class="flex">
+          <div class="w-28 shrink-0 px-3 py-3 bg-surface-container-low border-r border-outline-variant/30 flex flex-col justify-center">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant leading-tight">{{ group_label }}</p>
+            <p class="text-[10px] text-on-surface-variant/70 leading-tight mt-0.5">{{ group_sub }}</p>
+          </div>
+          <div class="flex flex-1 divide-x divide-outline-variant/30">
+            {% for code, short, desc in group_items %}
+            <label class="flex-1 cursor-pointer group">
+              <input type="checkbox" name="tech_competency" value="{{ code }}" data-short="{{ short }}"
+                     class="tech-cb peer sr-only" {% if code in selected_tech %}checked{% endif %}>
+              <div class="h-full px-3 py-3 flex flex-col items-center justify-center text-center transition-all
+                          peer-checked:bg-primary peer-checked:text-white
+                          group-hover:bg-surface-container">
+                <p class="text-[11px] font-bold leading-tight">{{ code }}</p>
+                <p class="text-[10px] mt-1 leading-tight opacity-70">{{ short }}</p>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+
+      </div>
+    </div>
+
+    <script>
+    (function(){
+      const tags = document.getElementById('selected-tags');
+      function renderTags(){
+        tags.innerHTML = '';
+        document.querySelectorAll('.tech-cb:checked').forEach(cb => {
+          const pill = document.createElement('span');
+          pill.className = 'inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 rounded-full px-3 py-1 text-xs font-semibold';
+          pill.innerHTML = `${cb.value} <button type="button" onclick="unchecked('${cb.value}')" class="hover:text-error leading-none">&times;</button>`;
+          tags.appendChild(pill);
+        });
+      }
+      window.unchecked = function(code){
+        const cb = document.querySelector(`.tech-cb[value="${code}"]`);
+        if(cb){ cb.checked = false; renderTags(); }
+      };
+      document.querySelectorAll('.tech-cb').forEach(cb => cb.addEventListener('change', renderTags));
+      renderTags();
+    })();
+    </script>
+
+    <!-- Description (optional) -->
+    <div>
+      <label class="block text-sm font-semibold text-on-surface mb-2">Additional Context <span class="text-on-surface-variant font-normal">(optional)</span></label>
+      <textarea id="description-textarea" name="description" rows="3"
+                placeholder="Any extra details about the topic, school context, or specific focus areas for the AI..."
+                oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+                class="w-full border border-outline-variant rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors resize-none overflow-hidden">{{ post.description|default:'' }}</textarea>
+    </div>
+
+    <!-- Framework info -->
+    <div class="p-4 bg-surface-container-low rounded-xl border border-outline-variant/20">
+      <p class="text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Framework</p>
+      <p class="text-sm text-on-surface font-medium">FSL Framework v2 — 9 Weeks · 18 Block Periods</p>
+      <p class="text-xs text-on-surface-variant mt-1">Explore → Learn I → Learn II → Find → Create I → Create II → Improve → Share → Reflect</p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center justify-end gap-3 pt-2">
+      <a href="{% url 'dashboard' %}" class="px-5 py-2.5 text-on-surface-variant font-medium text-sm hover:text-on-surface transition-colors">
+        Cancel
+      </a>
+      <button type="submit"
+              class="flex items-center gap-2 bg-primary text-white px-6 py-2.5 rounded-xl font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors">
+        <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+        Create & Generate
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

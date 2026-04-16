@@ -1,0 +1,789 @@
+{% extends "base.html" %}
+{% load project_tags %}
+{% block title %}Session {{ session.number }}: {{ session.name }} — Neorise FSL{% endblock %}
+
+{% block extra_style %}
+body { line-height: 1.6; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.split-left { position: sticky; top: 73px; max-height: calc(100vh - 73px); overflow-y: auto; }
+#md-preview h1,#md-preview h2,#md-preview h3 { font-weight:700; margin-top:1.2em; margin-bottom:0.4em; color:#1e293b; }
+#md-preview h1 { font-size:1.15rem; }
+#md-preview h2 { font-size:1.05rem; border-bottom:1px solid #e2e8f0; padding-bottom:0.3em; }
+#md-preview h3 { font-size:0.95rem; color:#374151; }
+#md-preview p  { margin-bottom:0.7em; }
+#md-preview ul,#md-preview ol { padding-left:1.4rem; margin-bottom:0.7em; }
+#md-preview li { margin-bottom:0.35em; }
+#md-preview strong { font-weight:700; color:#1e293b; }
+#md-preview em { font-style:italic; }
+#md-preview hr { border:none; border-top:1px solid #e2e8f0; margin:1.2em 0; }
+#md-preview code { background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:0.8em; font-family:monospace; }
+/* Weekly Brief */
+#brief-preview h1,#brief-preview h2,#brief-preview h3,
+#brief-full h1,#brief-full h2,#brief-full h3 { font-weight:700; margin-top:1.4em; margin-bottom:0.5em; color:#1e293b; }
+#brief-preview h1,#brief-full h1 { font-size:1.1rem; }
+#brief-preview h2,#brief-full h2 { font-size:1rem; border-bottom:1px solid #e2e8f0; padding-bottom:0.3em; color:#334155; }
+#brief-preview h3,#brief-full h3 { font-size:0.9rem; color:#475569; }
+#brief-preview p,#brief-full p { margin-bottom:0.75em; line-height:1.7; }
+#brief-preview ul,#brief-preview ol,#brief-full ul,#brief-full ol { padding-left:1.5rem; margin-bottom:0.75em; }
+#brief-preview li,#brief-full li { margin-bottom:0.4em; line-height:1.6; }
+#brief-preview strong,#brief-full strong { font-weight:700; color:#1e293b; }
+#brief-preview hr,#brief-full hr { border:none; border-top:1px solid #e2e8f0; margin:1.2em 0; }
+{% endblock %}
+
+{% block content %}
+
+{# ── Breadcrumb ── #}
+<nav class="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-5">
+  <a href="{% url 'dashboard' %}" class="hover:text-primary transition-colors">Dashboard</a>
+  <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+  <a href="{% url 'project_detail' project.pk %}" class="hover:text-primary transition-colors">
+    {{ project.topic|truncatechars:40 }}
+  </a>
+  <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+  <span class="text-slate-400">Week {{ session.week.number }} — {{ session.week.phase }}</span>
+  <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+  <span class="text-primary font-bold">Session {{ session.number }}</span>
+</nav>
+
+{# ── Page Header ── #}
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-7 pb-6 border-b border-slate-100">
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight text-on-surface mb-2">
+      Session {{ session.number }}: {{ session.name }}
+    </h1>
+    <div class="flex flex-wrap items-center gap-2.5">
+      <span class="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold uppercase tracking-wide">
+        Block Period {{ session.number }}
+      </span>
+      <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+      <span class="text-slate-500 text-sm font-medium">
+        Week {{ session.week.number }} — {{ session.week.phase }}
+      </span>
+      <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+      <span class="text-slate-500 text-sm font-medium">{{ project.grade }}</span>
+      {% if content and content.is_approved %}
+        <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+        <span class="px-2.5 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-bold">Approved</span>
+      {% endif %}
+    </div>
+  </div>
+  {# AI generation status chip #}
+  {% if content and content.generated_at %}
+  <div class="bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-4 py-3 shadow-sm flex items-center gap-3 shrink-0">
+    <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
+      <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+    </div>
+    <div class="text-[13px]">
+      <p class="font-semibold text-on-surface">AI Generated</p>
+      <p class="text-slate-400 text-[11px] mt-0.5">{{ content.generated_at|date:"d M Y, H:i" }}</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Split Panel Layout ── #}
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pb-16">
+
+  {# LEFT PANEL — Framework Input (5 cols, sticky) #}
+  <aside class="lg:col-span-5 split-left no-scrollbar">
+    <div class="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 overflow-hidden">
+
+      {# Panel header #}
+      <div class="flex items-center gap-2 px-6 py-4 border-b border-slate-100 bg-surface-container-low/40">
+        <span class="material-symbols-outlined text-slate-400 text-[20px]">input</span>
+        <h2 class="text-sm font-bold text-on-surface">Framework Input</h2>
+        <span class="ml-auto text-xs text-slate-400 font-medium">Read-only</span>
+      </div>
+
+      <div class="p-6 space-y-8">
+
+        {# 1. Generic Session Template #}
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
+            Generic Session Template
+          </label>
+          <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+            <p class="text-sm text-slate-700 leading-relaxed">{{ session.generic_description }}</p>
+          </div>
+        </div>
+
+        {# 2. Kaushal Bodh Questions #}
+        {% if kb_questions %}
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
+            Kaushal Bodh Questions
+          </label>
+          <div class="space-y-3">
+            {% for question in kb_questions %}
+            <div class="flex gap-3 items-start">
+              <span class="w-5 h-5 rounded-full bg-violet-100 text-primary flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
+                {{ forloop.counter }}
+              </span>
+              <p class="text-sm text-slate-700 leading-relaxed">{{ question }}</p>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# 3. Competency Mapping #}
+        {% if competencies %}
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
+            Competency Mapping
+          </label>
+          <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100 space-y-4">
+            {% for comp in competencies %}
+            <div class="{% if not forloop.first %}pt-4 border-t border-slate-100{% endif %}">
+              <div class="flex flex-wrap items-center gap-2 mb-2.5">
+                <span class="px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5
+                  {% if session.week.number == 1 %}bg-[#0D9488]/10 text-[#0D9488]
+                  {% elif session.week.number == 2 %}bg-[#7C3AED]/10 text-[#7C3AED]
+                  {% elif session.week.number == 3 %}bg-[#D97706]/10 text-[#D97706]
+                  {% elif session.week.number == 4 %}bg-[#E85D30]/10 text-[#E85D30]
+                  {% elif session.week.number == 5 %}bg-[#2563EB]/10 text-[#2563EB]
+                  {% else %}bg-[#059669]/10 text-[#059669]{% endif %}">
+                  <span class="w-1.5 h-1.5 rounded-full
+                    {% if session.week.number == 1 %}bg-[#0D9488]
+                    {% elif session.week.number == 2 %}bg-[#7C3AED]
+                    {% elif session.week.number == 3 %}bg-[#D97706]
+                    {% elif session.week.number == 4 %}bg-[#E85D30]
+                    {% elif session.week.number == 5 %}bg-[#2563EB]
+                    {% else %}bg-[#059669]{% endif %}">
+                  </span>
+                  {{ comp.sp_name }}
+                </span>
+                <span class="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-mono font-bold">
+                  {{ comp.msp_code }}
+                </span>
+              </div>
+              <div class="p-3.5 rounded-lg bg-surface-container-low/50">
+                <p class="text-sm text-slate-600 leading-relaxed">{{ comp.description }}</p>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# 4. Period Duration #}
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
+            Period Duration
+          </label>
+          <div class="flex items-center gap-3">
+            <span class="px-4 py-2 rounded-full bg-primary text-white text-sm font-bold">
+              Block Period {{ session.number }}
+            </span>
+            <span class="text-slate-600 text-sm">~80 minutes</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </aside>
+
+  {# RIGHT PANEL — AI Output (7 cols) #}
+  <div class="lg:col-span-7">
+
+    {# Panel label row #}
+    <div class="flex items-center gap-2 mb-6">
+      <span class="material-symbols-outlined text-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+      <h2 class="text-base font-bold text-on-surface">AI Generated Output</h2>
+      <span class="text-xs text-slate-400 font-medium ml-1">Editable</span>
+    </div>
+
+    <form method="POST" id="session-save-form">
+      {% csrf_token %}
+
+      {# 1. Weekly Brief #}
+      <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/10 mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-primary">Weekly Brief</p>
+          {% if weekly_brief %}
+          <button type="button" onclick="toggleBrief()"
+            class="text-xs font-medium text-primary hover:bg-primary/10 transition-colors px-3 py-1 rounded-lg border border-primary/20 flex items-center gap-1">
+            <span id="brief-chevron" class="material-symbols-outlined text-[14px]">expand_more</span>
+            <span id="brief-btn-label">Read more</span>
+          </button>
+          {% endif %}
+        </div>
+        {% if weekly_brief %}
+          <div id="brief-preview"
+               class="prose prose-sm max-w-none bg-slate-50 border border-slate-100 rounded-xl px-5 py-4 text-sm text-slate-700 leading-relaxed overflow-hidden"
+               style="max-height:120px;">
+            {{ weekly_brief|render_markdown }}
+          </div>
+          <div id="brief-full"
+               class="hidden prose prose-sm max-w-none bg-slate-50 border border-slate-100 rounded-xl px-5 py-4 text-sm text-slate-700 leading-relaxed mt-0">
+            {{ weekly_brief|render_markdown }}
+          </div>
+        {% else %}
+          <p class="text-sm text-on-surface-variant italic">No weekly brief for this session.</p>
+        {% endif %}
+      </div>
+
+      {# 2. Session Description & Flow #}
+      <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/10 mb-5 group">
+        <div class="flex items-center justify-between mb-3">
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-primary" for="id_ai_description">
+            Session Description &amp; Flow
+          </label>
+          <div class="flex items-center gap-2">
+            <button type="button" id="toggle-edit-btn" onclick="toggleEditMode()"
+              class="text-xs font-medium text-primary hover:bg-primary/10 transition-colors px-3 py-1 rounded-lg border border-primary/20 flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">edit</span>
+              Edit
+            </button>
+            <button type="button" onclick="resetToOriginal()"
+              class="text-xs font-medium text-slate-400 hover:text-error transition-colors px-2 py-1 rounded-lg hover:bg-slate-50 opacity-0 group-hover:opacity-100">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {% if content and content.ai_description %}
+          {# Rendered markdown preview #}
+          <div id="md-preview"
+               class="prose prose-sm max-w-none bg-slate-50 border border-slate-100 rounded-xl px-5 py-4 mb-4 text-sm text-slate-700 leading-relaxed"
+               style="min-height:200px;">
+          </div>
+          {# Edit textarea — hidden by default #}
+          <div id="md-edit-wrap" class="hidden bg-slate-50 border border-slate-100 rounded-xl p-4 focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/10 transition-all mb-4">
+            <textarea
+              id="id_ai_description"
+              name="ai_description"
+              rows="22"
+              class="w-full bg-transparent border-none focus:ring-0 text-sm text-on-surface resize-y leading-relaxed min-h-[280px] font-mono"
+            >{{ content.ai_description }}</textarea>
+          </div>
+        {% else %}
+          <div class="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-10 text-center mb-4">
+            <span class="material-symbols-outlined text-4xl text-slate-300 mb-3 block">auto_awesome</span>
+            <p class="text-sm text-slate-400 font-medium">No AI content generated yet for this session.</p>
+            <p class="text-xs text-slate-300 mt-1">Generate materials from the project detail page.</p>
+          </div>
+          <textarea id="id_ai_description" name="ai_description" rows="18"
+            class="hidden w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-sm resize-y"></textarea>
+        {% endif %}
+
+        {# Action row: Save + Approve + Regenerate + History + Rollback #}
+        <div class="flex flex-wrap items-center gap-3 pt-1">
+          <button type="submit" name="action" value="save"
+            class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 active:scale-95 transition-all">
+            Save Changes
+          </button>
+
+          {% if content and content.is_approved %}
+            <button type="button" id="approve-btn" onclick="toggleApproval()"
+              class="px-5 py-2.5 rounded-xl bg-teal-600 text-white font-semibold text-sm hover:bg-teal-700 shadow-sm shadow-teal-600/20 active:scale-95 transition-all flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[17px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+              Approved
+            </button>
+          {% else %}
+            <button type="button" id="approve-btn" onclick="toggleApproval()"
+              class="px-5 py-2.5 rounded-xl border border-teal-500 text-teal-600 font-semibold text-sm hover:bg-teal-50 active:scale-95 transition-all flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[17px]">check_circle</span>
+              Approve Session
+            </button>
+          {% endif %}
+
+          <span id="approve-status" class="text-xs text-slate-400 hidden">Saving…</span>
+
+          <div class="flex items-center gap-2 ml-auto">
+            <button type="button" onclick="openRegenModal()"
+              class="px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-semibold text-sm hover:bg-amber-100 active:scale-95 transition-all flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">refresh</span>Regenerate
+            </button>
+            <button type="button" onclick="openHistoryModal()"
+              class="px-4 py-2 rounded-xl bg-primary/5 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/10 active:scale-95 transition-all flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">manage_history</span>History
+            </button>
+            {% if content and content.original_description %}
+            <button type="button" onclick="openRollbackModal()"
+              class="px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 font-semibold text-sm hover:bg-red-100 active:scale-95 transition-all flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">history</span>Rollback
+            </button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </form>
+
+  </div>
+  {# end right panel #}
+
+</div>
+{# end split grid #}
+
+{# ── Footer Navigation ── #}
+<footer class="mt-4 pt-6 border-t border-slate-200">
+  <div class="flex items-center justify-between">
+
+    {# Previous Session #}
+    <div class="flex items-center gap-2 min-w-[180px]">
+      {% if prev_session %}
+        <a href="{% url 'session_review' project.pk prev_session.number %}"
+          class="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors">
+          <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+        </a>
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Previous</span>
+          <a href="{% url 'session_review' project.pk prev_session.number %}"
+            class="text-xs font-semibold text-on-surface hover:text-primary transition-colors">
+            {{ prev_session.name|truncatechars:32 }}
+          </a>
+        </div>
+      {% else %}
+        <button class="p-2 text-slate-300 rounded-full cursor-not-allowed" disabled>
+          <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Previous</span>
+          <span class="text-xs font-semibold text-slate-300">—</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {# Session counter + dot progress #}
+    <div class="text-center">
+      <span class="block text-[10px] font-bold uppercase tracking-widest text-primary mb-1.5">
+        Session {{ session.number }} of 18
+      </span>
+      <div class="flex gap-0.5 justify-center">
+        {% for i in "123456789012345678"|make_list %}
+          {% if forloop.counter == session.number %}
+            <span class="w-5 h-1 rounded-full bg-primary"></span>
+          {% elif forloop.counter < session.number %}
+            <span class="w-1.5 h-1 rounded-full bg-primary/40"></span>
+          {% else %}
+            <span class="w-1.5 h-1 rounded-full bg-slate-200"></span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Next Session #}
+    <div class="flex items-center gap-2 justify-end min-w-[180px]">
+      {% if next_session %}
+        <div class="text-right">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Next Up</span>
+          <a href="{% url 'session_review' project.pk next_session.number %}"
+            class="text-xs font-semibold text-on-surface hover:text-primary transition-colors">
+            {{ next_session.name|truncatechars:32 }}
+          </a>
+        </div>
+        <a href="{% url 'session_review' project.pk next_session.number %}"
+          class="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors">
+          <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+        </a>
+      {% else %}
+        <div class="text-right">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Next Up</span>
+          <span class="text-xs font-semibold text-slate-300">—</span>
+        </div>
+        <button class="p-2 text-slate-300 rounded-full cursor-not-allowed" disabled>
+          <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+        </button>
+      {% endif %}
+    </div>
+
+  </div>
+</footer>
+
+{# ── Regenerate Modal ── #}
+<div id="regen-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeRegenModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-amber-500 text-xl">refresh</span>
+        <h2 class="text-lg font-bold text-on-surface">Regenerate Session {{ session.number }}</h2>
+      </div>
+      <button onclick="closeRegenModal()" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+    <div id="regen-input-section">
+      <div class="px-6 py-5 flex flex-col gap-4">
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-semibold text-on-surface">Instructions for AI <span class="text-slate-400 font-normal">(optional)</span></label>
+          <textarea id="regen-instructions" rows="4"
+            placeholder="e.g. Make activities more hands-on, focus on group work..."
+            class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-surface-container-low text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-primary focus:border-transparent resize-none transition-all"></textarea>
+          <p class="text-xs text-slate-400">Leave blank to use original framework prompt.</p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+        <button onclick="closeRegenModal()" class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+        <button onclick="submitRegen()" class="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 shadow-md shadow-amber-200 transition-all">
+          <span class="material-symbols-outlined text-base" style="font-variation-settings:'FILL' 1">auto_awesome</span>Regenerate Now
+        </button>
+      </div>
+    </div>
+    <div id="regen-log-section" class="hidden flex-col">
+      <div class="px-6 py-4 bg-slate-900 font-mono text-xs text-green-400 h-52 overflow-y-auto" id="regen-log-terminal">
+        <p class="text-slate-500">Initialising...</p>
+      </div>
+      <div id="regen-done-section" class="hidden px-6 py-4 flex items-center justify-between border-t border-slate-100 bg-slate-50/60">
+        <p class="text-sm font-semibold text-teal-600 flex items-center gap-2">
+          <span class="material-symbols-outlined text-base" style="font-variation-settings:'FILL' 1">check_circle</span>Regeneration complete
+        </p>
+        <button onclick="location.reload()" class="px-5 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 transition-all">Reload Page</button>
+      </div>
+      <div id="regen-loading-section" class="px-6 py-3 border-t border-slate-100 flex items-center gap-2 text-sm text-slate-500">
+        <span class="animate-spin material-symbols-outlined text-base text-primary">progress_activity</span>Generating...
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Version History Modal ── #}
+<div id="history-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeHistoryModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[85vh]">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary text-xl">manage_history</span>
+        <h2 class="text-lg font-bold text-on-surface">Version History — Session {{ session.number }}</h2>
+      </div>
+      <button onclick="closeHistoryModal()" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+    <div id="history-loading" class="px-6 py-10 text-center text-sm text-slate-400">
+      <span class="animate-spin material-symbols-outlined text-primary">progress_activity</span>
+      <p class="mt-2">Loading versions...</p>
+    </div>
+    <div id="history-list" class="hidden overflow-y-auto flex-1 divide-y divide-slate-100"></div>
+    <div id="history-empty" class="hidden px-6 py-10 text-center text-sm text-slate-400">No previous versions found.</div>
+  </div>
+</div>
+
+{# ── Rollback Modal ── #}
+<div id="rollback-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeRollbackModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden">
+    <div class="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start gap-3">
+      <span class="material-symbols-outlined text-red-500 text-2xl mt-0.5">history</span>
+      <div>
+        <h2 class="text-lg font-bold text-on-surface">Rollback to Original?</h2>
+        <p class="text-sm text-on-surface-variant mt-0.5">Session {{ session.number }}: {{ session.name }}</p>
+      </div>
+    </div>
+    <div class="px-6 py-5">
+      <p class="text-sm text-slate-600 leading-relaxed">This will restore the very first AI-generated content. All edits and regenerations will be lost.</p>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+      <button onclick="closeRollbackModal()" class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+      <button onclick="submitRollback()" class="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 transition-all">
+        <span class="material-symbols-outlined text-base">history</span>Rollback
+      </button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  // ── Markdown preview / edit toggle ──────────────────────
+  // Pass content directly via Django template to avoid reading from hidden textarea
+  const RAW_CONTENT = "{{ content.ai_description|default:''|escapejs }}";
+
+  let editMode = false;
+  const mdPreview  = document.getElementById('md-preview');
+  const mdEditWrap = document.getElementById('md-edit-wrap');
+  const mdTextarea = document.getElementById('id_ai_description');
+  const toggleBtn  = document.getElementById('toggle-edit-btn');
+
+  function renderMarkdown() {
+    if (!mdPreview) return;
+    const src = mdTextarea ? mdTextarea.value : RAW_CONTENT;
+    mdPreview.innerHTML = (typeof marked !== 'undefined')
+      ? marked.parse(src || '')
+      : src.replace(/\n/g, '<br>');
+  }
+
+  function toggleEditMode() {
+    editMode = !editMode;
+    if (editMode) {
+      mdPreview  && mdPreview.classList.add('hidden');
+      mdEditWrap && mdEditWrap.classList.remove('hidden');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">visibility</span> Preview';
+        toggleBtn.classList.replace('text-primary','text-slate-600');
+        toggleBtn.classList.replace('border-primary/20','border-slate-200');
+      }
+    } else {
+      renderMarkdown();
+      mdPreview  && mdPreview.classList.remove('hidden');
+      mdEditWrap && mdEditWrap.classList.add('hidden');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">edit</span> Edit';
+        toggleBtn.classList.replace('text-slate-600','text-primary');
+        toggleBtn.classList.replace('border-slate-200','border-primary/20');
+      }
+    }
+  }
+
+  // Initial render — scripts run after DOM is ready at page bottom
+  renderMarkdown();
+
+  // ── CSRF ─────────────────────────────────────────────────
+  function getCookie(name) {
+    let v = null;
+    if (document.cookie) {
+      for (const c of document.cookie.split(';')) {
+        const t = c.trim();
+        if (t.startsWith(name + '=')) { v = decodeURIComponent(t.slice(name.length + 1)); break; }
+      }
+    }
+    return v;
+  }
+  const csrftoken = getCookie('csrftoken');
+
+  // ── Reset to original content ────────────────────────────
+  const originalContent = `{{ content.original_description|default:""|escapejs }}`;
+
+  function resetToOriginal() {
+    const ta = document.getElementById('id_ai_description');
+    if (!ta) return;
+    if (!originalContent.trim()) {
+      alert('No original content available to reset to.');
+      return;
+    }
+    if (confirm('Reset to original AI content? Unsaved edits will be lost.')) {
+      ta.value = originalContent;
+    }
+  }
+
+  // ── Approve / Unapprove toggle ───────────────────────────
+  const approveUrl = "{% url 'session_approve' project.pk session.number %}";
+  let isApproved   = {{ content.is_approved|yesno:"true,false" }};
+
+  function toggleApproval() {
+    const btn    = document.getElementById('approve-btn');
+    const status = document.getElementById('approve-status');
+    if (!btn) return;
+
+    btn.disabled = true;
+    status.textContent = 'Saving…';
+    status.classList.remove('hidden');
+
+    fetch(approveUrl, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrftoken,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({}),
+    })
+    .then(res => res.json())
+    .then(data => {
+      btn.disabled = false;
+      status.classList.add('hidden');
+      // View returns {approved: bool} or {is_approved: bool} — handle both
+      isApproved = (data.is_approved !== undefined) ? data.is_approved : data.approved;
+
+      if (isApproved) {
+        btn.className = 'px-5 py-2.5 rounded-xl bg-teal-600 text-white font-semibold text-sm hover:bg-teal-700 shadow-sm shadow-teal-600/20 active:scale-95 transition-all flex items-center gap-1.5';
+        btn.innerHTML = '<span class="material-symbols-outlined text-[17px]" style="font-variation-settings: \'FILL\' 1;">check_circle</span> Approved';
+      } else {
+        btn.className = 'px-5 py-2.5 rounded-xl border border-teal-500 text-teal-600 font-semibold text-sm hover:bg-teal-50 active:scale-95 transition-all flex items-center gap-1.5';
+        btn.innerHTML = '<span class="material-symbols-outlined text-[17px]">check_circle</span> Approve Session';
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      status.textContent = 'Error — try again.';
+      setTimeout(() => status.classList.add('hidden'), 3000);
+    });
+  }
+
+  // ── Regenerate ──────────────────────────────────────────
+  const REGEN_URL    = "{% url 'session_regenerate' project.pk session.number %}";
+  const LOGS_URL     = "{% url 'logs_json' project.pk %}";
+  const SESSION_NUM  = {{ session.number }};
+  let regenPollInterval = null;
+  let regenLastLogId    = 0;
+
+  const LOG_COLORS = {
+    'INIT':'text-violet-400','RESOLVE':'text-blue-400','INJECT':'text-yellow-300',
+    'STREAM':'text-cyan-400','TOKEN':'text-green-400','SAVE':'text-teal-300','ERROR':'text-red-400',
+  };
+
+  function openRegenModal() {
+    document.getElementById('regen-instructions').value = '';
+    document.getElementById('regen-input-section').classList.remove('hidden');
+    document.getElementById('regen-log-section').classList.add('hidden');
+    document.getElementById('regen-done-section').classList.add('hidden');
+    document.getElementById('regen-loading-section').classList.remove('hidden');
+    document.getElementById('regen-log-terminal').innerHTML = '';
+    document.getElementById('regen-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeRegenModal() {
+    document.getElementById('regen-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+    if (regenPollInterval) { clearInterval(regenPollInterval); regenPollInterval = null; }
+  }
+
+  async function submitRegen() {
+    const instructions = document.getElementById('regen-instructions').value;
+    document.getElementById('regen-input-section').classList.add('hidden');
+    document.getElementById('regen-log-section').classList.remove('hidden');
+
+    const beforeResp = await fetch(LOGS_URL);
+    const beforeData = await beforeResp.json();
+    regenLastLogId = beforeData.logs.length ? beforeData.logs[beforeData.logs.length - 1].id : 0;
+
+    const fd = new FormData();
+    fd.append('custom_instructions', instructions);
+    fd.append('csrfmiddlewaretoken', csrftoken);
+    await fetch(REGEN_URL, { method: 'POST', body: fd });
+
+    regenPollInterval = setInterval(pollRegenLogs, 1500);
+  }
+
+  async function pollRegenLogs() {
+    const resp = await fetch(LOGS_URL + '?after=' + regenLastLogId);
+    const data = await resp.json();
+    const terminal = document.getElementById('regen-log-terminal');
+    data.logs.forEach(log => {
+      if (log.id <= regenLastLogId) return;
+      regenLastLogId = log.id;
+      const color = LOG_COLORS[log.level] || 'text-slate-300';
+      const line = document.createElement('p');
+      line.className = color + ' leading-relaxed';
+      line.textContent = '[' + log.ts + '] ' + log.level + ' · ' + log.message;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+      if (log.level === 'SAVE' && log.message.includes('Session ' + SESSION_NUM + ' regenerated')) {
+        clearInterval(regenPollInterval); regenPollInterval = null;
+        document.getElementById('regen-loading-section').classList.add('hidden');
+        document.getElementById('regen-done-section').classList.remove('hidden');
+      }
+    });
+  }
+
+  // ── Version History ──────────────────────────────────────
+  const HISTORY_URL = "{% url 'session_history' project.pk session.number %}";
+  const RESTORE_URL = "{% url 'session_restore' project.pk session.number %}";
+
+  async function openHistoryModal() {
+    document.getElementById('history-loading').classList.remove('hidden');
+    document.getElementById('history-list').classList.add('hidden');
+    document.getElementById('history-empty').classList.add('hidden');
+    document.getElementById('history-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    const resp = await fetch(HISTORY_URL);
+    const data = await resp.json();
+    document.getElementById('history-loading').classList.add('hidden');
+
+    if (!data.versions.length) {
+      document.getElementById('history-empty').classList.remove('hidden');
+      return;
+    }
+    const list = document.getElementById('history-list');
+    list.innerHTML = '';
+    data.versions.forEach(v => {
+      const clean = v.ai_description.replace(/#{1,6}\s+/gm,'').replace(/\*{1,3}([^*\n]+)\*{1,3}/g,'$1').replace(/`[^`]+`/g,'').trim();
+      const short = clean.substring(0, 300);
+      const hasFull = clean.length > 300;
+      const instructions = v.custom_instructions
+        ? `<p class="text-xs text-violet-600 mt-1 italic flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">prompt_suggestion</span>"${v.custom_instructions}"</p>` : '';
+      list.innerHTML += `
+        <div class="p-5 border-b border-slate-100 last:border-0">
+          <div class="flex items-start justify-between gap-4 mb-3">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-1 bg-primary/10 text-primary text-xs font-bold rounded-lg">v${v.version_number}</span>
+              <span class="text-xs text-slate-400">${v.created_at}</span>
+            </div>
+            <button onclick="restoreVersion(${v.id}, ${v.version_number})"
+              class="shrink-0 px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-all flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">restore</span>Restore
+            </button>
+          </div>
+          ${instructions}
+          <div id="vs-${v.id}" class="text-sm text-slate-600 leading-relaxed mt-2 whitespace-pre-line">${short}${hasFull ? '...' : ''}</div>
+          <div id="vf-${v.id}" class="hidden text-sm text-slate-600 leading-relaxed mt-2 whitespace-pre-line">${clean}</div>
+          ${hasFull ? `<button onclick="toggleVP(${v.id})" id="vtb-${v.id}" class="mt-2 text-xs text-primary font-semibold hover:underline flex items-center gap-1">
+            <span class="material-symbols-outlined text-[14px]">expand_more</span>Show full content</button>` : ''}
+        </div>`;
+    });
+    list.classList.remove('hidden');
+  }
+
+  function toggleVP(vId) {
+    const s = document.getElementById('vs-' + vId);
+    const f = document.getElementById('vf-' + vId);
+    const b = document.getElementById('vtb-' + vId);
+    const hidden = f.classList.contains('hidden');
+    f.classList.toggle('hidden', !hidden);
+    s.classList.toggle('hidden', hidden);
+    b.innerHTML = hidden
+      ? '<span class="material-symbols-outlined text-[14px]">expand_less</span>Show less'
+      : '<span class="material-symbols-outlined text-[14px]">expand_more</span>Show full content';
+  }
+
+  async function restoreVersion(vId, vNum) {
+    if (!confirm('Restore v' + vNum + '? Current content will be saved as a new version.')) return;
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', csrftoken);
+    fd.append('version_id', vId);
+    const resp = await fetch(RESTORE_URL, { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.status === 'restored') location.reload();
+  }
+
+  function closeHistoryModal() {
+    document.getElementById('history-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  // ── Rollback ─────────────────────────────────────────────
+  const ROLLBACK_URL = "{% url 'session_rollback' project.pk session.number %}";
+
+  function openRollbackModal() {
+    document.getElementById('rollback-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeRollbackModal() {
+    document.getElementById('rollback-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function submitRollback() {
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', csrftoken);
+    const resp = await fetch(ROLLBACK_URL, { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.status === 'rolled_back') location.reload();
+    else { alert('No original content to rollback to.'); closeRollbackModal(); }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeRegenModal(); closeHistoryModal(); closeRollbackModal(); }
+  });
+
+  function toggleBrief() {
+    const preview = document.getElementById('brief-preview');
+    const full    = document.getElementById('brief-full');
+    const chevron = document.getElementById('brief-chevron');
+    const label   = document.getElementById('brief-btn-label');
+    const expanded = !full.classList.contains('hidden');
+    preview.classList.toggle('hidden', !expanded);
+    full.classList.toggle('hidden', expanded);
+    chevron.textContent   = expanded ? 'expand_more' : 'expand_less';
+    label.textContent     = expanded ? 'Read more' : 'Show less';
+  }
+</script>
+{% endblock %}

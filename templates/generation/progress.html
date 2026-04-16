@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Generating — {{ project.topic|truncatechars:40 }}{% endblock %}
+
+{% block extra_style %}
+  .ai-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  #terminal-log { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+  #terminal-log::-webkit-scrollbar { width: 4px; }
+  #terminal-log::-webkit-scrollbar-track { background: transparent; }
+  #terminal-log::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor-blink { animation: blink 1s step-end infinite; }
+  @keyframes fadeSlideIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  .log-line { animation: fadeSlideIn 0.15s ease-out both; }
+  @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(400%); } }
+  .scanline { position:absolute; left:0; right:0; height:40px; background:linear-gradient(transparent,rgba(99,14,212,0.04),transparent); animation:scanline 4s linear infinite; pointer-events:none; }
+  @keyframes barPulse { 0%,100%{opacity:0.3;transform:scaleY(0.6)} 50%{opacity:1;transform:scaleY(1)} }
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-10">
+
+  <!-- Back -->
+  <div>
+    <a href="{% url 'dashboard' %}" class="inline-flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors rounded-full px-4 py-2 hover:bg-surface-container-low -ml-4">
+      <span class="material-symbols-outlined text-xl">arrow_back</span>
+      <span class="font-medium text-sm">Return to Projects</span>
+    </a>
+  </div>
+
+  <!-- Header -->
+  <header class="flex flex-col lg:flex-row justify-between gap-8 items-start">
+    <div class="flex flex-col gap-4 max-w-2xl">
+      <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-4xl ai-pulse">auto_awesome</span>
+        <h1 class="text-4xl font-bold tracking-tight text-on-surface">Generating Curriculum</h1>
+      </div>
+      <p class="text-lg text-on-surface-variant leading-relaxed">
+        AI is creating 18 session descriptions for '{{ project.topic }}'
+      </p>
+      <div class="flex flex-wrap items-center gap-3 mt-2">
+        <span class="px-3 py-1 rounded-full bg-surface-container-low text-on-surface text-sm font-medium">{{ project.grade }}</span>
+        <span class="px-3 py-1 rounded-full bg-surface-container-low text-on-surface text-sm font-medium">{{ project.get_subject_track_display }}</span>
+        <span class="px-3 py-1 rounded-full bg-surface-container-low text-primary text-sm font-medium flex items-center gap-1">
+          <span class="material-symbols-outlined text-sm">memory</span>
+          Model: Claude Sonnet 4
+        </span>
+      </div>
+    </div>
+    <!-- Cost tracker -->
+    <div class="flex gap-4 p-5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 shadow-sm min-w-[280px]">
+      <div class="flex-1 flex flex-col gap-1 border-r border-outline-variant/15 pr-4">
+        <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Sessions Done</span>
+        <span id="sessions-done" class="text-2xl font-bold text-on-surface">{{ completed }} / {{ total }}</span>
+      </div>
+      <div class="flex-1 flex flex-col gap-1 pl-4">
+        <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Status</span>
+        <span id="gen-status" class="text-2xl font-bold text-amber-500">Running</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Progress bar -->
+  <section class="flex flex-col gap-6 bg-surface-container-lowest rounded-xl p-8 border border-outline-variant/15 shadow-sm">
+    <div class="flex flex-col gap-3">
+      <div class="flex justify-between items-end">
+        <h2 class="text-xl font-semibold text-on-surface">{{ completed }} of {{ total }} sessions completed</h2>
+        <span id="percent-label" class="text-3xl font-bold text-primary">{{ percent }}%</span>
+      </div>
+      <div class="w-full h-4 bg-surface-container-low rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-full bg-gradient-to-r from-primary to-primary-container rounded-full transition-all duration-500" style="width: {{ percent }}%;"></div>
+      </div>
+      <p class="text-sm text-on-surface-variant font-medium flex items-center gap-1.5 mt-1">
+        <span class="material-symbols-outlined text-sm spin">sync</span>
+        <span id="progress-label">Generating session descriptions...</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- Session Grid -->
+  <section class="flex flex-col gap-4">
+    <h3 class="text-lg font-semibold text-on-surface">Session Progress</h3>
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {% for week in project.session_contents.all|slice:":3" %}{% endfor %}
+      {% regroup project.session_contents.all by session.week as week_groups %}
+      {% for group in week_groups %}
+      <div id="week-card-{{ group.grouper.number }}" class="flex flex-col gap-3 bg-surface-container-low rounded-xl p-4">
+        <h4 class="font-bold text-on-surface text-sm uppercase tracking-wide">Week {{ group.grouper.number }}</h4>
+        <div class="flex flex-col gap-2">
+          {% for sc in group.list %}
+          <div id="session-status-{{ sc.session.number }}" class="flex items-center gap-2 text-sm font-medium
+            {% if sc.ai_description %}text-secondary{% else %}text-on-surface-variant opacity-50{% endif %}">
+            <span class="material-symbols-outlined text-base">
+              {% if sc.ai_description %}check_circle{% else %}hourglass_empty{% endif %}
+            </span>
+            Session {{ sc.session.number }}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- Terminal -->
+  <section class="rounded-xl overflow-hidden shadow-2xl" style="border:1px solid #1e2d40;">
+    <!-- Chrome -->
+    <div class="flex items-center justify-between px-4 py-2.5" style="background:#161b22; border-bottom:1px solid #1e2d40;">
+      <div class="flex items-center gap-1.5">
+        <span class="w-3 h-3 rounded-full" style="background:#ff5f57;"></span>
+        <span class="w-3 h-3 rounded-full" style="background:#febc2e;"></span>
+        <span class="w-3 h-3 rounded-full" style="background:#28c840;"></span>
+      </div>
+      <span class="text-xs font-mono tracking-widest" style="color:#8b949e;">neorise-fsl · generation-worker · project-{{ project.id }}</span>
+      <div class="flex items-center gap-1.5">
+        <span id="live-dot" class="w-1.5 h-1.5 rounded-full ai-pulse" style="background:#22c55e;"></span>
+        <span id="live-label" class="text-[10px] font-mono uppercase tracking-widest" style="color:#22c55e;">LIVE</span>
+      </div>
+    </div>
+    <!-- Stats bar -->
+    <div class="flex items-center gap-6 px-5 py-2 font-mono text-[10px]" style="background:#0d1117; border-bottom:1px solid #1e2d40;">
+      <span style="color:#8b949e;">MODEL <span style="color:#c9d1d9;">claude-sonnet-4</span></span>
+      <span style="color:#8b949e;">PROJECT <span style="color:#a5f3fc;">{{ project.id }}</span></span>
+      <span style="color:#8b949e;">SESSIONS <span id="stat-sessions" style="color:#a5f3fc;">{{ completed }}/{{ total }}</span></span>
+    </div>
+    <!-- Log body -->
+    <div class="relative" style="background:#0d1117;">
+      <div class="scanline"></div>
+      <div id="terminal-log" class="px-5 py-4 font-mono text-xs leading-[1.7] overflow-y-auto" style="height:320px; background:#0d1117; color:#c9d1d9;"></div>
+    </div>
+    <!-- Thinking footer -->
+    <div class="flex items-center gap-3 px-5 py-3 font-mono text-xs relative overflow-hidden" style="background:#0f1923; border-top:1px solid #2d3748;">
+      <div class="absolute inset-0 pointer-events-none" style="background:radial-gradient(ellipse at 10% 50%, rgba(249,115,22,0.08) 0%, transparent 55%);"></div>
+      <div class="flex items-center gap-1 shrink-0">
+        <span style="color:#f97316; animation:blink 1.1s step-end infinite; font-size:14px;">✦</span>
+        <span style="color:#fb923c; animation:blink 0.7s step-end infinite 0.3s; font-size:11px;">✦</span>
+        <span style="color:#fdba74; animation:blink 1.4s step-end infinite 0.6s; font-size:9px;">✦</span>
+      </div>
+      <div class="flex items-baseline gap-2 min-w-0 relative">
+        <span id="thinking-word" class="font-bold tracking-tight" style="color:#f97316; font-size:13px;"></span>
+        <span id="thinking-context" class="truncate" style="color:#4b5563; font-size:11px;"></span>
+      </div>
+      <div class="ml-auto flex items-center gap-2.5 shrink-0">
+        <div class="flex gap-px items-end" style="height:14px;">
+          <span class="w-0.5 rounded-full" style="background:#f97316; height:40%; animation:barPulse 0.9s ease-in-out infinite 0.0s;"></span>
+          <span class="w-0.5 rounded-full" style="background:#f97316; height:70%; animation:barPulse 0.9s ease-in-out infinite 0.15s;"></span>
+          <span class="w-0.5 rounded-full" style="background:#f97316; height:100%; animation:barPulse 0.9s ease-in-out infinite 0.3s;"></span>
+          <span class="w-0.5 rounded-full" style="background:#f97316; height:55%; animation:barPulse 0.9s ease-in-out infinite 0.45s;"></span>
+          <span class="w-0.5 rounded-full" style="background:#f97316; height:80%; animation:barPulse 0.9s ease-in-out infinite 0.6s;"></span>
+        </div>
+        <span id="stream-label" class="uppercase tracking-widest text-[10px]" style="color:#f97316; animation:blink 2s step-end infinite;">streaming</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Actions -->
+  <div class="flex flex-wrap items-center justify-end gap-4 pb-10">
+    <a href="{% url 'dashboard' %}" class="px-6 py-2.5 rounded-lg text-primary font-medium hover:bg-primary-container/10 transition-colors text-sm flex items-center gap-2">
+      Continue in Background
+      <span class="material-symbols-outlined text-sm">open_in_new</span>
+    </a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const LOG_COLORS = {
+    INIT:    '#8b949e', RESOLVE: '#22d3ee', INJECT: '#a78bfa',
+    STREAM:  '#60a5fa', TOKEN:   '#fbbf24', SAVE:   '#4ade80',
+    WARN:    '#fb923c', ERROR:   '#f87171',
+  };
+
+  const TOTAL     = {{ total }};
+  const terminal  = document.getElementById('terminal-log');
+  let   completed = {{ completed }};
+  let   lastId    = 0;
+
+  function addLine(ts, level, message) {
+    const line = document.createElement('div');
+    line.className = 'log-line flex gap-0';
+    line.innerHTML =
+      `<span style="color:#3d4f61;margin-right:12px;flex-shrink:0;">${ts}</span>` +
+      `<span style="color:${LOG_COLORS[level]||'#c9d1d9'};font-weight:700;margin-right:10px;flex-shrink:0;width:52px;">${level}</span>` +
+      `<span style="color:#c9d1d9;">${message}</span>`;
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function updateProgress(done) {
+    completed = done;
+    const pct = Math.min(Math.round((done / TOTAL) * 100), 100);
+    document.getElementById('sessions-done').textContent = done + ' / ' + TOTAL;
+    document.getElementById('percent-label').textContent  = pct + '%';
+    document.getElementById('progress-bar').style.width   = pct + '%';
+    document.getElementById('stat-sessions').textContent  = done + '/' + TOTAL;
+    document.getElementById('progress-label').textContent = done < TOTAL
+      ? `Generating session descriptions... (${done}/${TOTAL} complete)`
+      : 'All sessions generated!';
+  }
+
+  // SSE
+  const evtSource = new EventSource("{% url 'log_stream' project.pk %}");
+
+  evtSource.onmessage = function(e) {
+    const data = JSON.parse(e.data);
+
+    if (data.done) {
+      evtSource.close();
+      document.getElementById('live-label').textContent = 'DONE';
+      document.getElementById('live-dot').style.background  = '#4ade80';
+      document.getElementById('live-dot').style.animation   = 'none';
+      document.getElementById('gen-status').textContent = 'Done';
+      document.getElementById('gen-status').className   = 'text-2xl font-bold text-teal-500';
+      document.getElementById('stream-label').textContent = 'complete';
+      addLine('--:--:--', 'SAVE', 'Generation complete · redirecting to project...');
+      setTimeout(() => { window.location = "{% url 'project_detail' project.pk %}"; }, 2000);
+      return;
+    }
+
+    addLine(data.ts, data.level, data.message);
+    lastId = data.id;
+
+    // Update session status icons when a SAVE event arrives
+    if (data.level === 'SAVE') {
+      const match = data.message.match(/BP(\d+)/);
+      if (match) {
+        const num = match[1];
+        const el  = document.getElementById('session-status-' + num);
+        if (el) {
+          const alreadyDone = el.querySelector('.material-symbols-outlined').textContent === 'check_circle';
+          el.className = el.className.replace('text-on-surface-variant opacity-50', 'text-secondary');
+          el.querySelector('.material-symbols-outlined').textContent = 'check_circle';
+          // Only increment if this session wasn't already marked done
+          if (!alreadyDone) {
+            completed++;
+            updateProgress(completed);
+          }
+        }
+      }
+    }
+  };
+
+  evtSource.onerror = function() {
+    addLine(new Date().toTimeString().slice(0,8), 'WARN', 'SSE connection lost — reload to reconnect.');
+    evtSource.close();
+  };
+
+  // Thinking word cycler
+  const THINKING_STATES = [
+    { word: "Thinking",      ctx: "· orchestrating pedagogical flow across 18 sessions" },
+    { word: "Synthesising",  ctx: "· weaving competency nodes into session narrative" },
+    { word: "Contemplating", ctx: "· resolving competency → semantic embedding space" },
+    { word: "Mesmerising",   ctx: "· distilling curriculum essence from framework graph" },
+    { word: "Crystallising", ctx: "· shaping challenge into coherent learning arc" },
+    { word: "Orchestrating", ctx: "· aligning Kaushal Bodh questions with session intent" },
+    { word: "Distilling",    ctx: "· compressing competency nodes → focal points" },
+    { word: "Reasoning",     ctx: "· mapping user research → empathy → HMW statement" },
+    { word: "Weaving",       ctx: "· threading sub-pillar across real-world context" },
+    { word: "Harmonising",   ctx: "· synchronising weekly objectives with session flow" },
+  ];
+  const wordEl = document.getElementById('thinking-word');
+  const ctxEl  = document.getElementById('thinking-context');
+  let wi = 0;
+  function cycleWord() {
+    const s = THINKING_STATES[wi++ % THINKING_STATES.length];
+    wordEl.style.opacity = '0'; ctxEl.style.opacity = '0';
+    setTimeout(() => {
+      wordEl.textContent = s.word + '...'; ctxEl.textContent = s.ctx;
+      wordEl.style.transition = ctxEl.style.transition = 'opacity 0.2s';
+      wordEl.style.opacity = '1'; ctxEl.style.opacity = '1';
+    }, 200);
+  }
+  cycleWord(); setInterval(cycleWord, 2800);
+</script>
+{% endblock %}

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Neorise FSL{% endblock %}
+
+{% block extra_style %}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.spin-slow { animation: spin 3s linear infinite; }
+.session-bar-bg { background: #e5e7eb; border-radius: 9999px; height: 6px; overflow: hidden; }
+.session-bar-fill { height: 100%; border-radius: 9999px; background: #16a34a; transition: width 0.4s; }
+{% endblock %}
+
+{% block content %}
+
+<!-- Page Header -->
+<div class="mb-8">
+  <h1 class="text-3xl font-bold tracking-tight text-on-surface mb-1">Curriculum Overview</h1>
+  <p class="text-on-surface-variant text-sm">Welcome back, Admin. Here is what's happening across your labs today.</p>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+
+  <!-- Total Projects -->
+  <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+    <div class="flex items-start justify-between mb-3">
+      <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">Total Projects</p>
+      <span class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">
+        <span class="material-symbols-outlined text-emerald-500 text-[18px]">trending_up</span>
+      </span>
+    </div>
+    <p class="text-4xl font-extrabold text-on-surface tracking-tight">{{ total_projects }}</p>
+    <p class="text-xs text-emerald-600 font-medium mt-1">All time</p>
+  </div>
+
+  <!-- Published -->
+  <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+    <div class="flex items-start justify-between mb-3">
+      <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">Published</p>
+      <span class="w-2 h-2 rounded-full bg-emerald-500 mt-1"></span>
+    </div>
+    <p class="text-4xl font-extrabold text-on-surface tracking-tight">{{ published_count }}</p>
+    <p class="text-xs text-slate-400 font-medium mt-1">Active modules</p>
+  </div>
+
+  <!-- In Review -->
+  <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+    <div class="flex items-start justify-between mb-3">
+      <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">In Review</p>
+      <span class="w-2 h-2 rounded-full bg-amber-400 mt-1"></span>
+    </div>
+    <p class="text-4xl font-extrabold text-on-surface tracking-tight">{{ review_count }}</p>
+    <p class="text-xs text-slate-400 font-medium mt-1">Pending approval</p>
+  </div>
+
+  <!-- Generating -->
+  <div class="bg-white rounded-2xl p-5 shadow-sm border border-amber-300 {% if generating_count %}ring-1 ring-amber-200{% endif %}">
+    <div class="flex items-start justify-between mb-3">
+      <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">Generating</p>
+      <span class="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
+        <span class="material-symbols-outlined text-amber-500 text-[18px] {% if generating_count %}spin-slow{% endif %}">settings</span>
+      </span>
+    </div>
+    <p class="text-4xl font-extrabold text-on-surface tracking-tight">{{ generating_count }}</p>
+    {% if generating_count %}
+      <p class="text-xs text-amber-500 font-semibold mt-1">AI Agent working...</p>
+    {% else %}
+      <p class="text-xs text-slate-400 font-medium mt-1">No active jobs</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- Projects Table Section -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+
+  <!-- Section header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-slate-100">
+    <h2 class="text-lg font-bold text-on-surface">Your Projects</h2>
+    <a href="{% url 'project_create' %}"
+       class="inline-flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors">
+      <span class="material-symbols-outlined text-[18px]">add</span>
+      Create New Project
+    </a>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+    <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1 min-w-[200px] max-w-xs">
+      <span class="material-symbols-outlined text-slate-400 text-[18px]">search</span>
+      <input type="text" id="filter-name" placeholder="Filter by project name..."
+             class="bg-transparent border-none focus:ring-0 text-sm text-on-surface w-full placeholder:text-slate-400"
+             oninput="filterTable()">
+    </div>
+    <select id="filter-status" onchange="filterTable()"
+            class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm text-on-surface font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors">
+      <option value="">All Statuses</option>
+      <option value="published">Published</option>
+      <option value="review">In Review</option>
+      <option value="generating">Generating</option>
+      <option value="draft">Draft</option>
+    </select>
+    <select id="filter-grade" onchange="filterTable()"
+            class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm text-on-surface font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors">
+      <option value="">All Grades</option>
+      <option value="Grade 6">Grade 6</option>
+      <option value="Grade 7">Grade 7</option>
+      <option value="Grade 8">Grade 8</option>
+      <option value="Grade 9">Grade 9</option>
+      <option value="Grade 10">Grade 10</option>
+      <option value="Grade 11">Grade 11</option>
+      <option value="Grade 12">Grade 12</option>
+    </select>
+  </div>
+
+  {% if projects %}
+  <table class="w-full text-sm" id="projects-table">
+    <thead>
+      <tr class="border-b border-slate-100 bg-slate-50/60">
+        <th class="text-left px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Project Name</th>
+        <th class="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Grade</th>
+        <th class="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Subject Area</th>
+        <th class="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</th>
+        <th class="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Sessions</th>
+        <th class="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Created Date</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100" id="table-body">
+      {% for project in projects %}
+      <tr class="hover:bg-slate-50/50 transition-colors project-row"
+          data-name="{{ project.topic|lower }}"
+          data-status="{{ project.status }}"
+          data-grade="{{ project.grade }}">
+
+        <!-- Project Name -->
+        <td class="px-6 py-4">
+          {% if project.status == 'generating' %}
+            <a href="{% url 'generation_progress' project.pk %}" class="font-semibold text-primary hover:underline block leading-tight">
+              {{ project.topic|truncatechars:55 }}
+            </a>
+          {% else %}
+            <a href="{% url 'project_detail' project.pk %}" class="font-semibold text-primary hover:underline block leading-tight">
+              {{ project.topic|truncatechars:55 }}
+            </a>
+          {% endif %}
+          <span class="text-[11px] text-slate-400 font-mono mt-0.5 block">ID: CUR-{{ project.pk|stringformat:"03d" }}</span>
+        </td>
+
+        <!-- Grade -->
+        <td class="px-4 py-4">
+          <span class="px-2.5 py-1 bg-primary/8 text-primary rounded-lg text-xs font-semibold border border-primary/15">
+            {{ project.grade }}
+          </span>
+        </td>
+
+        <!-- Subject -->
+        <td class="px-4 py-4 text-slate-600">{{ project.get_subject_track_display }}</td>
+
+        <!-- Status -->
+        <td class="px-4 py-4">
+          {% if project.status == 'published' %}
+            <span class="flex items-center gap-1.5 text-emerald-700 font-semibold text-xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>Published
+            </span>
+          {% elif project.status == 'generating' %}
+            <span class="flex items-center gap-1.5 text-amber-600 font-semibold text-xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 spin-slow"></span>Generating
+            </span>
+          {% elif project.status == 'review' %}
+            <span class="flex items-center gap-1.5 text-amber-700 font-semibold text-xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>In Review
+            </span>
+          {% else %}
+            <span class="flex items-center gap-1.5 text-slate-500 font-semibold text-xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>Draft
+            </span>
+          {% endif %}
+        </td>
+
+        <!-- Sessions progress bar -->
+        <td class="px-4 py-4 min-w-[130px]">
+          {% with approved=project.sessions_approved total=project.sessions_total %}
+          {% if total > 0 %}
+            {% widthratio approved total 100 as pct %}
+            <div class="flex items-center gap-2">
+              <div class="session-bar-bg flex-1">
+                <div class="session-bar-fill" style="width:{{ pct }}%;"></div>
+              </div>
+              <span class="text-xs font-semibold text-slate-500 shrink-0">{{ approved }}/{{ total }}</span>
+            </div>
+          {% else %}
+            <span class="text-xs text-slate-300">—</span>
+          {% endif %}
+          {% endwith %}
+        </td>
+
+        <!-- Created date -->
+        <td class="px-4 py-4 text-slate-500 text-xs whitespace-nowrap">{{ project.created_at|date:"d M Y" }}</td>
+
+        <!-- Actions -->
+        <td class="px-4 py-4">
+          <div class="relative group">
+            <button class="p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600">
+              <span class="material-symbols-outlined text-[18px]">more_vert</span>
+            </button>
+            <div class="hidden group-hover:block absolute right-0 top-8 bg-white border border-slate-200 rounded-xl shadow-lg z-10 w-40 py-1.5 text-sm">
+              {% if project.status == 'generating' %}
+                <a href="{% url 'generation_progress' project.pk %}" class="flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                  <span class="material-symbols-outlined text-[16px]">trending_up</span> View Progress
+                </a>
+              {% else %}
+                <a href="{% url 'project_detail' project.pk %}" class="flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                  <span class="material-symbols-outlined text-[16px]">open_in_new</span> Open
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        </td>
+
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% else %}
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <span class="material-symbols-outlined text-5xl text-slate-200 mb-4">folder_open</span>
+    <p class="text-slate-400 font-medium mb-4">No projects yet</p>
+    <a href="{% url 'project_create' %}" class="bg-primary text-white px-5 py-2.5 rounded-xl font-semibold text-sm">
+      Create your first project
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function filterTable() {
+    const name   = document.getElementById('filter-name').value.toLowerCase();
+    const status = document.getElementById('filter-status').value;
+    const grade  = document.getElementById('filter-grade').value;
+    document.querySelectorAll('.project-row').forEach(row => {
+      const matchName   = row.dataset.name.includes(name);
+      const matchStatus = !status || row.dataset.status === status;
+      const matchGrade  = !grade  || row.dataset.grade === grade;
+      row.style.display = (matchName && matchStatus && matchGrade) ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

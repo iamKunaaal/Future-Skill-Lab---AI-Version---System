@@ -1,2 +1,9 @@
 .claude/
 *.local
+.env
+db.sqlite3
+*.xlsx
+fsl_review_project_*.html
+__pycache__/
+*.pyc
+*.pyo

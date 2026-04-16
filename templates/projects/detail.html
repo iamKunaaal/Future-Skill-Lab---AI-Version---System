@@ -1,0 +1,850 @@
+{% extends "base.html" %}
+{% load project_tags %}
+{% block title %}{{ project.topic|truncatechars:40 }} — Neorise FSL{% endblock %}
+
+{% block main_class %}flex-grow w-full py-0 px-0{% endblock %}
+
+{% block extra_style %}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+{% endblock %}
+
+{% block content %}
+
+{# ── Left Fixed Sidebar ── #}
+<aside class="fixed left-0 top-[57px] h-[calc(100vh-57px)] w-56 flex-col py-5 bg-white border-r border-slate-100 z-40 hidden md:flex">
+  {# Project mini card #}
+  <div class="px-4 mb-5">
+    <div class="bg-surface-container-low rounded-xl p-3.5">
+      <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Current Project</p>
+      <p class="text-sm font-bold text-on-surface leading-snug">{{ project.topic|truncatechars:35 }}</p>
+      <div class="flex items-center gap-2 mt-2">
+        {% if project.status == 'published' %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold">
+            <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>Published
+          </span>
+        {% elif project.status == 'review' %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px] font-bold">
+            <span class="w-1.5 h-1.5 rounded-full bg-violet-500"></span>In Review
+          </span>
+        {% elif project.status == 'generating' %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Generating
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>Draft
+          </span>
+        {% endif %}
+        <span class="text-[10px] text-slate-400">{{ project.grade }}</span>
+      </div>
+    </div>
+  </div>
+  {# Nav links #}
+  <nav class="flex-1 px-3">
+    <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 mb-2">Navigation</p>
+    <div class="space-y-0.5">
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg font-semibold text-sm text-primary" href="#" style="background-color: rgba(99,14,212,0.07);">
+        <span class="material-symbols-outlined text-[20px]">assignment</span>
+        Project Overview
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-slate-50 rounded-lg text-sm transition-colors" href="#">
+        <span class="material-symbols-outlined text-[20px]">calendar_view_week</span>
+        Weekly Schedule
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-slate-50 rounded-lg text-sm transition-colors" href="#">
+        <span class="material-symbols-outlined text-[20px]">architecture</span>
+        Frameworks
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 hover:bg-slate-50 rounded-lg text-sm transition-colors" href="#">
+        <span class="material-symbols-outlined text-[20px]">auto_awesome</span>
+        AI Insights
+      </a>
+    </div>
+  </nav>
+  {# Back link #}
+  <div class="px-4 mt-auto">
+    <a href="{% url 'dashboard' %}" class="flex items-center gap-2 text-sm text-slate-500 hover:text-primary transition-colors font-medium px-2 py-2">
+      <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+      All Projects
+    </a>
+  </div>
+</aside>
+
+{# ── Main Content (shifted right on md+) ── #}
+<div class="md:ml-56 pt-8 px-8 pb-16 min-h-screen bg-surface">
+<div class="max-w-screen-xl mx-auto">
+
+  {# Breadcrumb #}
+  <nav class="flex gap-2 text-xs font-medium text-on-surface-variant mb-6">
+    <a href="{% url 'dashboard' %}" class="hover:text-primary transition-colors">Dashboard</a>
+    <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+    <a href="{% url 'dashboard' %}" class="hover:text-primary transition-colors">Projects</a>
+    <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+    <span class="text-primary font-bold">{{ project.topic|truncatechars:40 }}</span>
+  </nav>
+
+  {# Page Header #}
+  <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
+    <div>
+      <h1 class="text-3xl font-extrabold text-on-surface tracking-tight mb-3">{{ project.topic }}</h1>
+      <div class="flex flex-wrap gap-2">
+        <span class="px-3 py-1 bg-primary-fixed text-on-primary-fixed-variant rounded-full text-xs font-bold">{{ project.grade }}</span>
+        <span class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-xs font-bold">{{ project.get_subject_track_display }}</span>
+        {% if project.status == 'published' %}
+          <span class="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-xs font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span> Published
+          </span>
+        {% elif project.status == 'review' %}
+          <span class="px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-xs font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-violet-500"></span> In Review
+          </span>
+        {% elif project.status == 'generating' %}
+          <span class="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Generating
+          </span>
+        {% endif %}
+        <span class="px-3 py-1 text-on-surface-variant text-xs font-medium">Created: {{ project.created_at|date:"d M Y" }}</span>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 shrink-0">
+      <button class="px-4 py-2 text-primary font-semibold hover:bg-primary/5 rounded-lg transition-colors text-sm">Edit Project</button>
+      <button class="px-4 py-2 border border-primary text-primary font-semibold rounded-lg flex items-center gap-1.5 hover:bg-primary/5 transition-colors text-sm">
+        <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+        Generate Materials
+      </button>
+      {% if project.status == 'published' %}
+        <span class="inline-flex items-center gap-1.5 bg-teal-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">
+          <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+          Published
+        </span>
+      {% elif project.status == 'review' %}
+        <form method="post" action="{% url 'project_publish' project.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors cursor-pointer">
+            <span class="material-symbols-outlined text-[16px]">rate_review</span>
+            Publish Project
+          </button>
+        </form>
+      {% endif %}
+      <button class="p-2 hover:bg-surface-container-high rounded-lg">
+        <span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+      </button>
+    </div>
+  </div>
+
+  {# Progress Summary Bar #}
+  <section class="mb-8 p-6 bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/10">
+    {# One segment per week #}
+    <div class="flex gap-1.5 mb-3 h-2.5">
+      {% for week in weeks %}
+        {% with week_sessions=week.sessions.all %}
+          {% with w_approved=0 %}
+            {# Count approved sessions in this week #}
+            {% for session in week_sessions %}
+              {% with content=contents|get_item:session.number %}
+                {% if content and content.is_approved %}
+                  <div class="flex-1 bg-teal-500 rounded-full" title="Week {{ week.number }}: {{ week.phase }}"></div>
+                {% else %}
+                  <div class="flex-1 bg-slate-200 rounded-full" title="Week {{ week.number }}: {{ week.phase }} — pending"></div>
+                {% endif %}
+              {% endwith %}
+            {% endfor %}
+          {% endwith %}
+        {% endwith %}
+      {% endfor %}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-on-surface-variant">
+      <span class="flex items-center gap-1 {% if project.sessions_generated == project.sessions_total %}text-teal-600 font-bold{% endif %}">
+        <span class="material-symbols-outlined text-[16px]">check_circle</span>
+        {{ project.sessions_generated }}/{{ project.sessions_total }} sessions generated
+      </span>
+      <span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+      <span class="flex items-center gap-1 {% if project.sessions_approved == project.sessions_total %}text-teal-600 font-bold{% else %}text-amber-600{% endif %}">
+        <span class="material-symbols-outlined text-[16px]">{% if project.sessions_approved == project.sessions_total %}check_circle{% else %}pending{% endif %}</span>
+        {{ project.sessions_approved }}/{{ project.sessions_total }} approved
+      </span>
+    </div>
+  </section>
+
+  {# Main Grid: Accordion + Side Panel #}
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+    {# ── Week Accordion (8 cols) ── #}
+    <div class="lg:col-span-8 space-y-3">
+
+      {% for week in weeks %}
+        {% with week_sessions=week.sessions.all week_color=week.number %}
+
+        {# Per-week inline color values (used directly in style/class below) #}
+        {% with w_done=0 %}
+
+        <div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm border border-outline-variant/10">
+          {# Week Header #}
+          <button onclick="toggleWeek({{ week.number }})"
+            class="w-full flex items-center justify-between px-6 py-4 hover:bg-surface-container-low transition-colors">
+            <div class="flex items-center gap-4">
+              <span class="font-bold text-on-surface">Week {{ week.number }}</span>
+              <span class="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide
+                {% if week.number == 1 %}bg-[#0D9488]/10 text-[#0D9488]
+                {% elif week.number == 2 %}bg-[#7C3AED]/10 text-[#7C3AED]
+                {% elif week.number == 3 %}bg-[#D97706]/10 text-[#D97706]
+                {% elif week.number == 4 %}bg-[#E85D30]/10 text-[#E85D30]
+                {% elif week.number == 5 %}bg-[#2563EB]/10 text-[#2563EB]
+                {% else %}bg-[#059669]/10 text-[#059669]{% endif %}">
+                {{ week.phase }}
+              </span>
+              <p class="hidden md:block text-sm text-on-surface-variant italic truncate max-w-xs">
+                {{ week.description }}
+              </p>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              {# Approved count for this week #}
+              {% with approved_count=0 %}
+                {% for s in week_sessions %}
+                  {% with sc=contents|get_item:s.number %}
+                    {% if sc and sc.is_approved %}{% with approved_count=approved_count|add:1 %}{% endwith %}{% endif %}
+                  {% endwith %}
+                {% endfor %}
+              {% endwith %}
+              <span class="flex items-center gap-1 text-teal-600 text-sm font-bold">
+                <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                {{ week_sessions|length }}/3
+              </span>
+              <span id="icon-week-{{ week.number }}" class="material-symbols-outlined text-on-surface-variant">
+                {% if week.number == 1 %}expand_less{% else %}expand_more{% endif %}
+              </span>
+            </div>
+          </button>
+
+          {# Week Sessions #}
+          <div id="week-{{ week.number }}-content"
+            class="{% if week.number != 1 %}hidden {% endif %}px-6 pb-6 space-y-4 bg-surface-container-low/20">
+
+            {% for session in week_sessions %}
+              {% with content=contents|get_item:session.number %}
+
+              {% if forloop.first %}
+              {# ── FIRST SESSION — EXPANDED CARD ── #}
+              <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+                {# Card header #}
+                <div class="flex items-center justify-between px-5 py-3 bg-surface-container-low/60">
+                  <div class="flex items-center gap-3">
+                    <span class="font-bold text-sm">Session {{ session.number }}</span>
+                    <span class="px-2.5 py-1 border border-outline-variant/50 rounded text-[10px] font-bold uppercase tracking-wide">
+                      Block Period {{ session.number }} · {{ session.week.phase }}
+                    </span>
+                  </div>
+                  {% if content and content.is_approved %}
+                    <span class="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold uppercase">Approved</span>
+                  {% elif content and content.ai_description %}
+                    <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold uppercase">Pending</span>
+                  {% else %}
+                    <span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold uppercase">Not Generated</span>
+                  {% endif %}
+                </div>
+                {# Card body — description + framework ref #}
+                <div class="p-5 grid grid-cols-1 md:grid-cols-5 gap-6">
+                  <div class="md:col-span-3">
+                    <p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Session Description</p>
+                    {% if content and content.ai_description %}
+                      <div class="text-sm leading-relaxed text-on-surface space-y-2" id="desc-{{ session.number }}">
+                        <p>{{ content.ai_description|strip_markdown|truncatechars:280 }}</p>
+                      </div>
+                      <a href="{% url 'session_review' project.pk session.number %}" class="text-primary font-bold inline-block mt-2 text-sm hover:underline">
+                        Show More →
+                      </a>
+                    {% else %}
+                      <p class="text-sm text-slate-400 italic">No AI content generated yet.</p>
+                    {% endif %}
+                  </div>
+                  <div class="md:col-span-2 bg-surface-container-low rounded-xl p-4">
+                    <p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">Framework Reference</p>
+                    {% with comps=session.competencies.all %}
+                    {% if comps %}
+                      <div class="space-y-3">
+                        <div>
+                          <p class="text-[10px] font-bold uppercase mb-0.5
+                            {% if week.number == 1 %}text-[#0D9488]{% elif week.number == 2 %}text-[#7C3AED]{% elif week.number == 3 %}text-[#D97706]{% elif week.number == 4 %}text-[#E85D30]{% elif week.number == 5 %}text-[#2563EB]{% else %}text-[#059669]{% endif %}">Sub-Pillar</p>
+                          <p class="text-sm font-bold">{% for c in comps %}{{ c.sp_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+                        </div>
+                        <div>
+                          <p class="text-[10px] font-bold uppercase text-primary mb-1">Competency</p>
+                          {% for c in comps %}
+                            <span class="inline-block px-2 py-0.5 bg-primary/10 text-primary rounded font-mono text-xs mr-1 mb-1">{{ c.msp_code }}</span>
+                          {% endfor %}
+                        </div>
+                        <p class="text-xs text-on-surface-variant leading-tight">{{ comps.first.description|truncatechars:100 }}</p>
+                      </div>
+                    {% else %}
+                      <p class="text-xs text-slate-400 italic">No competencies mapped.</p>
+                    {% endif %}
+                    {% endwith %}
+                  </div>
+                </div>
+                {# Card footer #}
+                <div class="px-5 py-3 flex items-center justify-between border-t border-slate-100">
+                  <div class="flex gap-4">
+                    <a href="{% url 'session_review' project.pk session.number %}"
+                      class="flex items-center gap-1.5 text-on-surface-variant text-sm font-medium hover:text-on-surface">
+                      <span class="material-symbols-outlined text-[16px]">edit</span>Edit
+                    </a>
+                    <button onclick="openRegenerateModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                      class="flex items-center gap-1.5 text-amber-600 text-sm font-medium hover:text-amber-700">
+                      <span class="material-symbols-outlined text-[16px]">refresh</span>Regenerate
+                    </button>
+                    <button onclick="openHistoryModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                      class="flex items-center gap-1.5 text-primary text-sm font-medium hover:text-primary/80">
+                      <span class="material-symbols-outlined text-[16px]">manage_history</span>History
+                    </button>
+                    {% if content and content.original_description %}
+                    <button onclick="openRollbackModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                      class="flex items-center gap-1.5 text-red-500 text-sm font-medium hover:text-red-600">
+                      <span class="material-symbols-outlined text-[16px]">history</span>Rollback
+                    </button>
+                    {% endif %}
+                  </div>
+                  <div class="flex items-center gap-4">
+                    {% if content and content.is_approved %}
+                      <span class="text-teal-600 font-bold text-sm">Approved ✓</span>
+                    {% endif %}
+                    <a href="{% url 'session_review' project.pk session.number %}"
+                      class="text-primary font-bold text-sm flex items-center gap-1 hover:underline">
+                      View Full Session <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {% else %}
+              {# ── COMPACT SESSION CARD ── #}
+              <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden"
+                style="border-left: 4px solid {% if week.number == 1 %}#0D9488{% elif week.number == 2 %}#7C3AED{% elif week.number == 3 %}#D97706{% elif week.number == 4 %}#E85D30{% elif week.number == 5 %}#2563EB{% else %}#059669{% endif %};">
+                <button onclick="toggleSession({{ session.number }})"
+                  class="w-full p-4 flex items-center justify-between hover:bg-slate-50/80 transition-colors">
+                  <div class="flex items-center gap-3">
+                    <span class="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0
+                      {% if week.number == 1 %}bg-[#0D9488]/10 text-[#0D9488]{% elif week.number == 2 %}bg-[#7C3AED]/10 text-[#7C3AED]{% elif week.number == 3 %}bg-[#D97706]/10 text-[#D97706]{% elif week.number == 4 %}bg-[#E85D30]/10 text-[#E85D30]{% elif week.number == 5 %}bg-[#2563EB]/10 text-[#2563EB]{% else %}bg-[#059669]/10 text-[#059669]{% endif %}">
+                      {{ session.number }}
+                    </span>
+                    <div class="text-left">
+                      <p class="font-semibold text-sm text-on-surface">{{ session.name }}</p>
+                      <p class="text-xs text-on-surface-variant">
+                        Block Period {{ session.number }} · {{ session.week.phase }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 shrink-0">
+                    {% if content and content.is_approved %}
+                      <span class="text-teal-600 font-bold text-xs">Approved ✓</span>
+                    {% elif content and content.ai_description %}
+                      <span class="text-amber-600 font-bold text-xs">Pending</span>
+                    {% endif %}
+                    <span id="icon-session-{{ session.number }}" class="material-symbols-outlined text-[18px] text-on-surface-variant">expand_more</span>
+                  </div>
+                </button>
+                {# Expandable detail #}
+                <div id="session-{{ session.number }}-detail" class="hidden border-t border-slate-100">
+                  {% if content and content.ai_description %}
+                  <div class="p-5 grid grid-cols-1 md:grid-cols-5 gap-6">
+                    <div class="md:col-span-3">
+                      <p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Session Description</p>
+                      <p class="text-sm leading-relaxed text-on-surface">{{ content.ai_description|strip_markdown|truncatechars:280 }}</p>
+                      <a href="{% url 'session_review' project.pk session.number %}" class="text-primary font-bold inline-block mt-2 text-sm hover:underline">Show More →</a>
+                    </div>
+                    <div class="md:col-span-2 bg-surface-container-low rounded-xl p-4">
+                      <p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">Framework Reference</p>
+                      {% with comps=session.competencies.all %}
+                      {% if comps %}
+                        <div class="space-y-2">
+                          <div>
+                            <p class="text-[10px] font-bold uppercase mb-0.5
+                            {% if week.number == 1 %}text-[#0D9488]{% elif week.number == 2 %}text-[#7C3AED]{% elif week.number == 3 %}text-[#D97706]{% elif week.number == 4 %}text-[#E85D30]{% elif week.number == 5 %}text-[#2563EB]{% else %}text-[#059669]{% endif %}">Sub-Pillar</p>
+                            <p class="text-xs font-bold">{% for c in comps %}{{ c.sp_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+                          </div>
+                          <div>
+                            {% for c in comps %}
+                              <span class="inline-block px-2 py-0.5 bg-primary/10 text-primary rounded font-mono text-xs mr-1 mb-1">{{ c.msp_code }}</span>
+                            {% endfor %}
+                          </div>
+                        </div>
+                      {% endif %}
+                      {% endwith %}
+                    </div>
+                  </div>
+                  <div class="px-5 py-3 flex items-center justify-between border-t border-slate-100">
+                    <div class="flex gap-4">
+                      <a href="{% url 'session_review' project.pk session.number %}"
+                        class="flex items-center gap-1.5 text-on-surface-variant text-sm font-medium hover:text-on-surface">
+                        <span class="material-symbols-outlined text-[16px]">edit</span>Edit
+                      </a>
+                      <button onclick="openRegenerateModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                        class="flex items-center gap-1.5 text-amber-600 text-sm font-medium hover:text-amber-700">
+                        <span class="material-symbols-outlined text-[16px]">refresh</span>Regenerate
+                      </button>
+                      <button onclick="openHistoryModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                        class="flex items-center gap-1.5 text-primary text-sm font-medium hover:text-primary/80">
+                        <span class="material-symbols-outlined text-[16px]">manage_history</span>History
+                      </button>
+                      {% if content and content.original_description %}
+                      <button onclick="openRollbackModal('{{ session.number }}', '{{ session.name|escapejs }}')"
+                        class="flex items-center gap-1.5 text-red-500 text-sm font-medium hover:text-red-600">
+                        <span class="material-symbols-outlined text-[16px]">history</span>Rollback
+                      </button>
+                      {% endif %}
+                    </div>
+                    <a href="{% url 'session_review' project.pk session.number %}"
+                      class="text-primary font-bold text-sm flex items-center gap-1 hover:underline">
+                      View Full Session <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </a>
+                  </div>
+                  {% else %}
+                  <div class="p-5 text-center text-sm text-slate-400 italic">
+                    No AI content generated yet for this session.
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
+
+              {% endwith %}
+            {% endfor %}
+
+          </div>
+        </div>
+
+        {% endwith %}{# w_done #}
+        {% endwith %}{# week_sessions #}
+      {% endfor %}
+
+    </div>
+    {# end accordion #}
+
+    {# ── Right Sticky Sidebar (4 cols) ── #}
+    <div class="lg:col-span-4 sticky top-20 space-y-5">
+
+      {# Weekly Objectives #}
+      {% with first_week=weeks.first %}
+      {% if first_week %}
+      <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/10">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <span class="material-symbols-outlined text-[18px]">target</span>
+          </div>
+          <h3 class="font-bold text-base">Weekly Objectives</h3>
+        </div>
+        <p class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-4 mt-3">
+          Week {{ first_week.number }}: {{ first_week.phase }}
+        </p>
+        {% with first_session=first_week.sessions.first %}
+        {% with first_content=contents|get_item:first_session.number %}
+        {% if first_content and first_content.weekly_brief %}
+          <p class="text-sm leading-relaxed text-on-surface">{{ first_content.weekly_brief|truncatechars:220 }}</p>
+        {% else %}
+          <p class="text-sm text-on-surface-variant italic">Weekly brief will appear here after generation.</p>
+        {% endif %}
+        {% endwith %}
+        {% endwith %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      {# Project Health Card #}
+      <div class="bg-gradient-to-br from-violet-600 to-primary-container p-6 rounded-xl text-white shadow-lg shadow-primary/20">
+        <p class="text-xs font-bold uppercase tracking-wider opacity-75 mb-1">Project Health</p>
+        {% if project.sessions_approved == project.sessions_total and project.sessions_total > 0 %}
+          <p class="text-2xl font-black mb-3">Exemplary</p>
+        {% elif project.sessions_approved > 0 %}
+          <p class="text-2xl font-black mb-3">In Progress</p>
+        {% else %}
+          <p class="text-2xl font-black mb-3">Getting Started</p>
+        {% endif %}
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm font-medium">
+            <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+            Framework Alignment: 100%
+          </div>
+          <div class="flex items-center gap-2 text-sm font-medium opacity-80">
+            <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+            {{ project.sessions_approved }}/{{ project.sessions_total }} sessions approved
+          </div>
+          <div class="flex items-center gap-2 text-sm font-medium opacity-80">
+            <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+            {{ project.sessions_generated }}/{{ project.sessions_total }} sessions generated
+          </div>
+        </div>
+      </div>
+
+      {# Quick Actions #}
+      <div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant/10">
+        <p class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Quick Actions</p>
+        <div class="space-y-2">
+          <button class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/5 rounded-lg transition-colors text-left">
+            <span class="material-symbols-outlined text-[18px]">download</span>
+            Download All Materials
+          </button>
+          <button class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-lg transition-colors text-left">
+            <span class="material-symbols-outlined text-[18px]">share</span>
+            Share with Teachers
+          </button>
+          <button class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 rounded-lg transition-colors text-left">
+            <span class="material-symbols-outlined text-[18px]">edit</span>
+            Edit Project Details
+          </button>
+        </div>
+      </div>
+
+    </div>
+    {# end sidebar #}
+
+  </div>
+  {# end main grid #}
+
+</div>
+</div>
+{# end main content #}
+
+{# ── Regenerate Modal ── #}
+<div id="regenerate-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeRegenerateModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden">
+    <div class="flex items-start justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="material-symbols-outlined text-amber-500 text-xl">refresh</span>
+          <h2 class="text-lg font-bold text-on-surface">Regenerate Content</h2>
+        </div>
+        <p id="modal-session-label" class="text-sm text-on-surface-variant font-medium"></p>
+      </div>
+      <button onclick="closeRegenerateModal()" class="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+
+    {# Input form — shown before submit #}
+    <div id="regen-input-section">
+      <div class="px-6 py-5 flex flex-col gap-4">
+        <div class="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4">
+          <span class="material-symbols-outlined text-amber-500 text-lg mt-0.5">info</span>
+          <p class="text-sm text-amber-800 leading-relaxed">
+            AI will regenerate this session's content. Tell it specifically what you want changed or improved.
+          </p>
+        </div>
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-semibold text-on-surface">Your Instructions for AI</label>
+          <textarea id="regenerate-prompt" rows="4"
+            placeholder="e.g. Make the activities more interactive, add a group discussion component..."
+            class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-surface-container-low text-sm text-on-surface placeholder:text-slate-400 focus:ring-2 focus:ring-primary focus:border-transparent resize-none transition-all"></textarea>
+          <p class="text-xs text-on-surface-variant">Leave blank to regenerate with the original framework prompt.</p>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+        <button type="button" onclick="closeRegenerateModal()"
+          class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-all">Cancel</button>
+        <button type="button" onclick="submitRegenerate()"
+          class="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 transition-all shadow-md shadow-amber-200">
+          <span class="material-symbols-outlined text-base" style="font-variation-settings:'FILL' 1">auto_awesome</span>
+          Regenerate Now
+        </button>
+      </div>
+    </div>
+
+    {# Live log section — shown after submit #}
+    <div id="regen-log-section" class="hidden flex flex-col">
+      <div class="px-6 py-4 bg-slate-900 font-mono text-xs text-green-400 h-52 overflow-y-auto" id="regen-log-terminal">
+        <p class="text-slate-500">Initialising...</p>
+      </div>
+      <div id="regen-done-section" class="hidden px-6 py-4 flex items-center justify-between border-t border-slate-100 bg-slate-50/60">
+        <p class="text-sm font-semibold text-teal-600 flex items-center gap-2">
+          <span class="material-symbols-outlined text-base" style="font-variation-settings:'FILL' 1">check_circle</span>
+          Regeneration complete
+        </p>
+        <button onclick="location.reload()" class="px-5 py-2 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary/90 transition-all">
+          Reload Page
+        </button>
+      </div>
+      <div id="regen-loading-section" class="px-6 py-3 border-t border-slate-100 flex items-center gap-2 text-sm text-slate-500">
+        <span class="animate-spin material-symbols-outlined text-base text-primary">progress_activity</span>
+        Generating...
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Version History Modal ── #}
+<div id="history-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeHistoryModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[85vh]">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="material-symbols-outlined text-primary text-xl">manage_history</span>
+          <h2 class="text-lg font-bold text-on-surface">Version History</h2>
+        </div>
+        <p id="history-session-label" class="text-sm text-on-surface-variant font-medium"></p>
+      </div>
+      <button onclick="closeHistoryModal()" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+    <div id="history-loading" class="px-6 py-10 text-center text-sm text-slate-400">
+      <span class="animate-spin material-symbols-outlined text-primary">progress_activity</span>
+      <p class="mt-2">Loading versions...</p>
+    </div>
+    <div id="history-list" class="hidden overflow-y-auto flex-1 divide-y divide-slate-100"></div>
+    <div id="history-empty" class="hidden px-6 py-10 text-center text-sm text-slate-400">
+      No previous versions found for this session.
+    </div>
+  </div>
+</div>
+
+{# ── Rollback Modal ── #}
+<div id="rollback-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 hidden">
+  <div onclick="closeRollbackModal()" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden">
+    <div class="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start gap-3">
+      <span class="material-symbols-outlined text-red-500 text-2xl mt-0.5">history</span>
+      <div>
+        <h2 class="text-lg font-bold text-on-surface">Rollback to Original?</h2>
+        <p id="rollback-session-label" class="text-sm text-on-surface-variant mt-0.5"></p>
+      </div>
+    </div>
+    <div class="px-6 py-5">
+      <p class="text-sm text-slate-600 leading-relaxed">This will restore the very first AI-generated content for this session. All edits and regenerations will be lost.</p>
+    </div>
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+      <button type="button" onclick="closeRollbackModal()"
+        class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-all">Cancel</button>
+      <button type="button" onclick="submitRollback()"
+        class="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 transition-all">
+        <span class="material-symbols-outlined text-base">history</span>
+        Rollback
+      </button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function toggleWeek(n) {
+    const content = document.getElementById('week-' + n + '-content');
+    const icon    = document.getElementById('icon-week-' + n);
+    if (!content) return;
+    const hidden = content.classList.contains('hidden');
+    content.classList.toggle('hidden', !hidden);
+    icon.textContent = hidden ? 'expand_less' : 'expand_more';
+  }
+
+  function toggleSession(n) {
+    const detail = document.getElementById('session-' + n + '-detail');
+    const icon   = document.getElementById('icon-session-' + n);
+    if (!detail) return;
+    const hidden = detail.classList.contains('hidden');
+    detail.classList.toggle('hidden', !hidden);
+    if (icon) icon.textContent = hidden ? 'expand_less' : 'expand_more';
+  }
+
+  let regenSessionNum = null;
+  let regenPollInterval = null;
+  let regenLastLogId = 0;
+  const LOGS_URL = "{% url 'logs_json' project.pk %}";
+  const REGEN_BASE_URL = "{% url 'session_regenerate' project.pk 0 %}";
+  const ROLLBACK_BASE_URL = "{% url 'session_rollback' project.pk 0 %}";
+
+  function openRegenerateModal(sessionNum, sessionName) {
+    regenSessionNum = sessionNum;
+    document.getElementById('modal-session-label').textContent = 'Session ' + sessionNum + ' — ' + sessionName;
+    document.getElementById('regenerate-prompt').value = '';
+    document.getElementById('regen-input-section').classList.remove('hidden');
+    document.getElementById('regen-log-section').classList.add('hidden');
+    document.getElementById('regen-done-section').classList.add('hidden');
+    document.getElementById('regen-loading-section').classList.remove('hidden');
+    document.getElementById('regen-log-terminal').innerHTML = '';
+    document.getElementById('regenerate-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => document.getElementById('regenerate-prompt').focus(), 100);
+  }
+
+  function closeRegenerateModal() {
+    document.getElementById('regenerate-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+    if (regenPollInterval) { clearInterval(regenPollInterval); regenPollInterval = null; }
+  }
+
+  async function submitRegenerate() {
+    const instructions = document.getElementById('regenerate-prompt').value;
+    const url = REGEN_BASE_URL.replace(/\/0\/$/, '/' + regenSessionNum + '/');
+    const csrfToken = '{{ csrf_token }}';
+
+    document.getElementById('regen-input-section').classList.add('hidden');
+    document.getElementById('regen-log-section').classList.remove('hidden');
+
+    const formData = new FormData();
+    formData.append('custom_instructions', instructions);
+    formData.append('csrfmiddlewaretoken', csrfToken);
+
+    // Get last log ID before queuing so we only show new logs
+    const beforeResp = await fetch(LOGS_URL);
+    const beforeData = await beforeResp.json();
+    regenLastLogId = beforeData.logs.length ? beforeData.logs[beforeData.logs.length - 1].id : 0;
+
+    await fetch(url, { method: 'POST', body: formData });
+
+    // Start polling logs
+    regenPollInterval = setInterval(pollRegenLogs, 1500);
+  }
+
+  const LOG_COLORS = {
+    'INIT':    'text-violet-400', 'RESOLVE': 'text-blue-400',
+    'INJECT':  'text-yellow-300', 'STREAM':  'text-cyan-400',
+    'TOKEN':   'text-green-400',  'SAVE':    'text-teal-300',
+    'ERROR':   'text-red-400',
+  };
+
+  async function pollRegenLogs() {
+    const resp = await fetch(LOGS_URL + '?after=' + regenLastLogId);
+    const data = await resp.json();
+    const terminal = document.getElementById('regen-log-terminal');
+
+    data.logs.forEach(log => {
+      if (log.id <= regenLastLogId) return;
+      regenLastLogId = log.id;
+      const color = LOG_COLORS[log.level] || 'text-slate-300';
+      const line = document.createElement('p');
+      line.className = color + ' leading-relaxed';
+      line.textContent = '[' + log.ts + '] ' + log.level + ' · ' + log.message;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+
+      // Detect completion
+      if (log.level === 'SAVE' && log.message.includes('Session ' + regenSessionNum + ' regenerated')) {
+        clearInterval(regenPollInterval);
+        regenPollInterval = null;
+        document.getElementById('regen-loading-section').classList.add('hidden');
+        document.getElementById('regen-done-section').classList.remove('hidden');
+      }
+    });
+  }
+
+  // ── Version History ──
+  let historySessionNum = null;
+  const HISTORY_BASE_URL = "{% url 'session_history' project.pk 0 %}";
+  const RESTORE_BASE_URL = "{% url 'session_restore' project.pk 0 %}";
+
+  async function openHistoryModal(sessionNum, sessionName) {
+    historySessionNum = sessionNum;
+    document.getElementById('history-session-label').textContent = 'Session ' + sessionNum + ' — ' + sessionName;
+    document.getElementById('history-loading').classList.remove('hidden');
+    document.getElementById('history-list').classList.add('hidden');
+    document.getElementById('history-empty').classList.add('hidden');
+    document.getElementById('history-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    const url = HISTORY_BASE_URL.replace(/\/0\/$/, '/' + sessionNum + '/');
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    document.getElementById('history-loading').classList.add('hidden');
+
+    if (!data.versions.length) {
+      document.getElementById('history-empty').classList.remove('hidden');
+      return;
+    }
+
+    const list = document.getElementById('history-list');
+    list.innerHTML = '';
+    data.versions.forEach(v => {
+      const clean = v.ai_description.replace(/#{1,6}\s+/gm, '').replace(/\*{1,3}([^*\n]+)\*{1,3}/g, '$1').replace(/`[^`]+`/g, '').trim();
+      const short = clean.substring(0, 300);
+      const hasFull = clean.length > 300;
+      const instructions = v.custom_instructions
+        ? `<p class="text-xs text-violet-600 mt-1 italic flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">prompt_suggestion</span>"${v.custom_instructions}"</p>` : '';
+      list.innerHTML += `
+        <div class="p-5 border-b border-slate-100 last:border-0">
+          <div class="flex items-start justify-between gap-4 mb-3">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-1 bg-primary/10 text-primary text-xs font-bold rounded-lg">v${v.version_number}</span>
+              <span class="text-xs text-slate-400">${v.created_at}</span>
+            </div>
+            <button onclick="restoreVersion(${v.id}, ${v.version_number})"
+              class="shrink-0 px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-all flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">restore</span>Restore
+            </button>
+          </div>
+          ${instructions}
+          <div id="preview-short-${v.id}" class="text-sm text-slate-600 leading-relaxed mt-2 whitespace-pre-line">${short}${hasFull ? '...' : ''}</div>
+          <div id="preview-full-${v.id}" class="hidden text-sm text-slate-600 leading-relaxed mt-2 whitespace-pre-line">${clean}</div>
+          ${hasFull ? `
+          <button onclick="toggleVersionPreview(${v.id})" id="toggle-btn-${v.id}"
+            class="mt-2 text-xs text-primary font-semibold hover:underline flex items-center gap-1">
+            <span class="material-symbols-outlined text-[14px]">expand_more</span>Show full content
+          </button>` : ''}
+        </div>`;
+    });
+    list.classList.remove('hidden');
+  }
+
+  function toggleVersionPreview(vId) {
+    const short = document.getElementById('preview-short-' + vId);
+    const full  = document.getElementById('preview-full-' + vId);
+    const btn   = document.getElementById('toggle-btn-' + vId);
+    const isHidden = full.classList.contains('hidden');
+    full.classList.toggle('hidden', !isHidden);
+    short.classList.toggle('hidden', isHidden);
+    btn.innerHTML = isHidden
+      ? '<span class="material-symbols-outlined text-[14px]">expand_less</span>Show less'
+      : '<span class="material-symbols-outlined text-[14px]">expand_more</span>Show full content';
+  }
+
+  function closeHistoryModal() {
+    document.getElementById('history-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function restoreVersion(versionId, versionNum) {
+    if (!confirm('Restore v' + versionNum + '? Current content will be saved as a new version.')) return;
+    const url = RESTORE_BASE_URL.replace(/\/0\/$/, '/' + historySessionNum + '/');
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    formData.append('version_id', versionId);
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.status === 'restored') location.reload();
+  }
+
+  // ── Rollback ──
+  let rollbackSessionNum = null;
+
+  function openRollbackModal(sessionNum, sessionName) {
+    rollbackSessionNum = sessionNum;
+    document.getElementById('rollback-session-label').textContent = 'Session ' + sessionNum + ' — ' + sessionName;
+    document.getElementById('rollback-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeRollbackModal() {
+    document.getElementById('rollback-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function submitRollback() {
+    const url = ROLLBACK_BASE_URL.replace(/\/0\/$/, '/' + rollbackSessionNum + '/');
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    const resp = await fetch(url, { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.status === 'rolled_back') {
+      location.reload();
+    } else {
+      alert('No original content found to rollback to.');
+      closeRollbackModal();
+    }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeRegenerateModal(); closeRollbackModal(); closeHistoryModal(); }
+  });
+</script>
+{% endblock %}

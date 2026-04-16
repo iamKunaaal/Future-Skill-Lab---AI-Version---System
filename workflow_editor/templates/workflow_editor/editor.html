@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FSL Workflow Editor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0a0b10; color: #e2e8f0; height: 100vh; overflow: hidden; }
+
+    /* ── Drawflow canvas overrides ─────────────────────────── */
+    #drawflow {
+      width: 100%;
+      height: 100%;
+      background-color: #0a0b10;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .drawflow .drawflow-node {
+      background: #141520;
+      border: 1.5px solid #252840;
+      border-radius: 12px;
+      padding: 0;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      min-width: 200px;
+    }
+    .drawflow .drawflow-node.selected {
+      border-color: #7c3aed;
+      box-shadow: 0 0 0 2px rgba(124,58,237,0.3), 0 4px 24px rgba(0,0,0,0.4);
+    }
+    .drawflow .drawflow-node .input, .drawflow .drawflow-node .output {
+      background: #7c3aed;
+      border: 2px solid #141520;
+      width: 12px; height: 12px;
+    }
+    .drawflow .connection .main-path {
+      stroke: #7c3aed;
+      stroke-width: 2px;
+      opacity: 0.6;
+    }
+    .drawflow .connection.selected .main-path { stroke: #a855f7; opacity: 1; }
+
+    /* ── Node inner styles ─────────────────────────────────── */
+    .node-week {
+      border-radius: 12px;
+      overflow: hidden;
+      min-width: 200px;
+    }
+    .node-week-header {
+      padding: 12px 14px 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .node-week-num {
+      font-size: 10px; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; opacity: .7;
+    }
+    .node-week-phase {
+      font-size: 15px; font-weight: 700; color: #fff;
+    }
+    .node-week-desc {
+      font-size: 11px; color: rgba(255,255,255,.55);
+      padding: 0 14px 12px; line-height: 1.5;
+    }
+
+    .node-session {
+      padding: 12px 14px;
+      min-width: 210px;
+    }
+    .node-session-top {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 7px;
+    }
+    .node-session-num {
+      width: 26px; height: 26px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; flex-shrink: 0;
+    }
+    .node-session-badge {
+      font-size: 10px; font-weight: 600; padding: 2px 7px;
+      border-radius: 999px; background: rgba(255,255,255,.07);
+      color: rgba(255,255,255,.5);
+    }
+    .node-session-name {
+      font-size: 13px; font-weight: 600; color: #f1f5f9;
+      line-height: 1.35; margin-bottom: 8px;
+    }
+    .node-session-challenge {
+      font-size: 10px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; margin-bottom: 8px;
+    }
+    .node-session-mats {
+      display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px;
+    }
+    .mat-chip {
+      font-size: 10px; font-weight: 600; padding: 2px 7px;
+      border-radius: 5px; background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.4); border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .node-comp {
+      padding: 10px 12px;
+      min-width: 180px; max-width: 240px;
+    }
+    .node-comp-code {
+      font-size: 11px; font-weight: 800; font-family: monospace;
+      color: #a78bfa; margin-bottom: 3px;
+    }
+    .node-comp-sp {
+      font-size: 11px; font-weight: 600; color: #94a3b8;
+      margin-bottom: 5px;
+    }
+    .node-comp-desc {
+      font-size: 11px; color: #64748b; line-height: 1.45;
+    }
+
+    /* ── Layout ────────────────────────────────────────────── */
+    .editor-layout { display: flex; flex-direction: column; height: 100vh; }
+    .topbar {
+      height: 52px; background: #0f1117; border-bottom: 1px solid #1e2130;
+      display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0;
+      z-index: 50;
+    }
+    .main-area { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 52px); }
+    .sidebar-left {
+      width: 260px; background: #0f1117; border-right: 1px solid #1e2130;
+      display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+    }
+    .canvas-wrap { flex: 1; position: relative; overflow: hidden; height: calc(100vh - 52px); }
+    .sidebar-right {
+      width: 300px; background: #0f1117; border-left: 1px solid #1e2130;
+      display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+      transition: transform .2s ease;
+    }
+    .sidebar-right.hidden-panel { transform: translateX(300px); width: 0; border: none; }
+
+    /* ── Sidebar sections ──────────────────────────────────── */
+    .section-title {
+      font-size: 10px; font-weight: 800; letter-spacing: .1em;
+      text-transform: uppercase; color: #475569; padding: 14px 16px 8px;
+    }
+    .palette-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 16px; cursor: grab; border-radius: 8px; margin: 0 8px 2px;
+      transition: background .15s;
+      font-size: 13px; font-weight: 500; color: #94a3b8;
+    }
+    .palette-item:hover { background: #1a1f2e; color: #e2e8f0; }
+    .palette-item:active { cursor: grabbing; }
+    .palette-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+    .material-symbols-outlined { vertical-align: middle; }
+
+    /* ── Buttons ───────────────────────────────────────────── */
+    .btn-primary {
+      padding: 7px 14px; background: #7c3aed; color: #fff;
+      border-radius: 8px; font-size: 13px; font-weight: 600;
+      border: none; cursor: pointer; display: flex; align-items: center; gap-6px;
+      transition: background .15s;
+    }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-ghost {
+      padding: 7px 12px; background: transparent; color: #64748b;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      border: 1px solid #1e2130; cursor: pointer;
+      transition: all .15s; display: flex; align-items: center; gap: 6px;
+    }
+    .btn-ghost:hover { background: #1a1f2e; color: #94a3b8; border-color: #252840; }
+    .btn-danger {
+      padding: 7px 12px; background: transparent; color: #f87171;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      border: 1px solid #3f1a1a; cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-danger:hover { background: #1f1010; }
+
+    /* ── Right panel form ──────────────────────────────────── */
+    .rp-field { margin-bottom: 14px; }
+    .rp-label {
+      display: block; font-size: 10px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: #475569; margin-bottom: 5px;
+    }
+    .rp-input {
+      width: 100%; background: #141520; border: 1px solid #252840;
+      border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #e2e8f0;
+      font-family: 'Inter', sans-serif; outline: none;
+      transition: border-color .15s;
+    }
+    .rp-input:focus { border-color: #7c3aed; }
+    textarea.rp-input { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+    /* ── Toast ─────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      display: none; align-items: center; gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    }
+    #toast.success { background: #0f2820; border: 1px solid #0D9488; color: #0D9488; }
+    #toast.error   { background: #1f1010; border: 1px solid #f87171; color: #f87171; }
+
+    /* ── Scrollbar ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1e2130; border-radius: 9px; }
+
+    /* ── Mini badge for save status ─────────────────────────  */
+    #save-status {
+      font-size: 11px; color: #475569; transition: color .3s;
+    }
+    #save-status.saved { color: #0D9488; }
+
+  </style>
+</head>
+<body>
+<div class="editor-layout">
+
+  <!-- ── TOP BAR ── -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:8px;margin-right:8px;">
+      <div style="width:28px;height:28px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:7px;display:flex;align-items:center;justify-content:center;">
+        <span class="material-symbols-outlined" style="font-size:16px;color:#fff;">account_tree</span>
+      </div>
+      <span style="font-size:15px;font-weight:700;color:#f1f5f9;">FSL Workflow</span>
+      <span style="font-size:11px;color:#475569;margin-left:4px;">Framework Editor</span>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    <span id="save-status"></span>
+
+    <button class="btn-ghost" onclick="loadFramework()" id="load-btn">
+      <span class="material-symbols-outlined" style="font-size:16px;">download</span>
+      Load Framework
+    </button>
+    <button class="btn-ghost" onclick="clearCanvas()">
+      <span class="material-symbols-outlined" style="font-size:16px;">clear_all</span>
+      Clear
+    </button>
+    <button class="btn-primary" onclick="saveLayout()" style="gap:6px;display:flex;align-items:center;">
+      <span class="material-symbols-outlined" style="font-size:16px;">save</span>
+      Save Layout
+    </button>
+    <div style="width:1px;height:24px;background:#1e2130;margin:0 4px;"></div>
+    <a href="/" style="display:flex;align-items:center;gap:6px;font-size:13px;color:#475569;text-decoration:none;padding:7px 10px;border-radius:8px;transition:all .15s;" onmouseover="this.style.background='#1a1f2e';this.style.color='#94a3b8'" onmouseout="this.style.background='transparent';this.style.color='#475569'">
+      <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back to App
+    </a>
+  </div>
+
+  <div class="main-area">
+
+    <!-- ── LEFT SIDEBAR ── -->
+    <div class="sidebar-left">
+      <div class="section-title">Actions</div>
+      <div style="padding: 0 8px 12px;">
+        <button onclick="loadFramework()" style="width:100%;padding:10px;background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(109,40,217,.1));border:1px solid rgba(124,58,237,.3);border-radius:10px;color:#a78bfa;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;" onmouseover="this.style.background='linear-gradient(135deg,rgba(124,58,237,.25),rgba(109,40,217,.2))'" onmouseout="this.style.background='linear-gradient(135deg,rgba(124,58,237,.15),rgba(109,40,217,.1))'">
+          <span class="material-symbols-outlined" style="font-size:18px;">auto_awesome</span>
+          Auto Load Framework
+        </button>
+      </div>
+
+      <div class="section-title">Add Nodes</div>
+      <div draggable="true" class="palette-item" ondragstart="drag(event)" data-node="week">
+        <div class="palette-icon" style="background:rgba(124,58,237,.15);">
+          <span class="material-symbols-outlined" style="font-size:16px;color:#7c3aed;">calendar_view_week</span>
+        </div>
+        Week Node
+      </div>
+      <div draggable="true" class="palette-item" ondragstart="drag(event)" data-node="session">
+        <div class="palette-icon" style="background:rgba(13,148,136,.15);">
+          <span class="material-symbols-outlined" style="font-size:16px;color:#0D9488;">event_note</span>
+        </div>
+        Session Node
+      </div>
+      <div draggable="true" class="palette-item" ondragstart="drag(event)" data-node="competency">
+        <div class="palette-icon" style="background:rgba(245,158,11,.15);">
+          <span class="material-symbols-outlined" style="font-size:16px;color:#f59e0b;">stars</span>
+        </div>
+        Competency Node
+      </div>
+
+      <div class="section-title" style="margin-top:8px;">Search Sessions</div>
+      <div style="padding:0 8px 8px;">
+        <input id="search-input" type="text" placeholder="Search by name..." oninput="filterSessions(this.value)"
+          style="width:100%;background:#141520;border:1px solid #252840;border-radius:8px;padding:8px 10px;font-size:12px;color:#e2e8f0;outline:none;font-family:inherit;" />
+      </div>
+      <div id="session-list" style="flex:1;overflow-y:auto;padding:0 8px;"></div>
+    </div>
+
+    <!-- ── CANVAS ── -->
+    <div class="canvas-wrap" id="canvas-wrap">
+      <div id="drawflow" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+
+      <!-- Zoom controls -->
+      <div style="position:absolute;bottom:20px;right:20px;display:flex;flex-direction:column;gap:6px;z-index:10;">
+        <button onclick="editor.zoom_in()" style="width:34px;height:34px;background:#141520;border:1px solid #252840;border-radius:8px;color:#94a3b8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;" title="Zoom In">+</button>
+        <button onclick="editor.zoom_reset()" style="width:34px;height:34px;background:#141520;border:1px solid #252840;border-radius:8px;color:#94a3b8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;" title="Reset Zoom">1:1</button>
+        <button onclick="editor.zoom_out()" style="width:34px;height:34px;background:#141520;border:1px solid #252840;border-radius:8px;color:#94a3b8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;" title="Zoom Out">−</button>
+      </div>
+
+      <!-- Empty state -->
+      <div id="empty-state" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;opacity:.4;">
+        <span class="material-symbols-outlined" style="font-size:64px;color:#7c3aed;margin-bottom:16px;">account_tree</span>
+        <p style="font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">FSL Workflow Editor</p>
+        <p style="font-size:14px;color:#475569;">Click "Auto Load Framework" to get started</p>
+      </div>
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <div class="sidebar-right hidden-panel" id="right-panel">
+      <div style="display:flex;align-items:center;justify-content:between;padding:14px 16px 10px;border-bottom:1px solid #1e2130;">
+        <span id="rp-title" style="font-size:13px;font-weight:700;color:#f1f5f9;flex:1;">Node Details</span>
+        <button onclick="closePanel()" style="background:none;border:none;cursor:pointer;color:#475569;padding:2px;">
+          <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+        </button>
+      </div>
+      <div id="rp-content" style="flex:1;overflow-y:auto;padding:16px;"></div>
+    </div>
+
+  </div>
+
+
+</div>
+
+<!-- Toast -->
+<div id="toast">
+  <span class="material-symbols-outlined" style="font-size:16px;" id="toast-icon">check_circle</span>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/drawflow/dist/drawflow.min.js"></script>
+<script>
+  // ── Init Drawflow ────────────────────────────────────────────
+  const editorEl = document.getElementById('drawflow');
+  const editor   = new Drawflow(editorEl);
+  editor.reroute = true;
+  editor.reroute_fix_curvature = true;
+  editor.force_first_input = false;
+  editor.start();
+
+  let frameworkData = null;
+  let selectedNodeId = null;
+  let nodeIdMap = {}; // dbId+type → drawflow node id
+
+  // ── Week colors ──────────────────────────────────────────────
+  const WEEK_COLORS = {
+    1: { bg: 'rgba(13,148,136,.12)',  border: '#0D9488', text: '#0D9488',  label: '#5eead4' },
+    2: { bg: 'rgba(124,58,237,.12)', border: '#7c3aed', text: '#7c3aed', label: '#c4b5fd' },
+    3: { bg: 'rgba(217,119,6,.12)',  border: '#D97706', text: '#D97706',  label: '#fcd34d' },
+    4: { bg: 'rgba(232,93,48,.12)',  border: '#E85D30', text: '#E85D30',  label: '#fdba74' },
+    5: { bg: 'rgba(37,99,235,.12)',  border: '#2563EB', text: '#2563EB',  label: '#93c5fd' },
+    6: { bg: 'rgba(5,150,105,.12)',  border: '#059669', text: '#059669',  label: '#6ee7b7' },
+  };
+
+  // ── Node HTML templates ──────────────────────────────────────
+  function weekNodeHTML(week) {
+    const c = WEEK_COLORS[week.number] || WEEK_COLORS[1];
+    return `
+      <div class="node-week" style="background:${c.bg};border-top:3px solid ${c.border};" data-week-id="${week.id}">
+        <div class="node-week-header">
+          <div>
+            <div class="node-week-num" style="color:${c.text};">Week ${week.number}</div>
+            <div class="node-week-phase" style="color:${c.label};">${week.phase}</div>
+          </div>
+          <span class="material-symbols-outlined" style="font-size:20px;color:${c.text};opacity:.5;margin-left:auto;">calendar_view_week</span>
+        </div>
+        <div class="node-week-desc">${week.description}</div>
+      </div>`;
+  }
+
+  function sessionNodeHTML(session, weekNum) {
+    const c = WEEK_COLORS[weekNum] || WEEK_COLORS[1];
+    const period = session.period_type === 'block1' ? '80min · B1'
+                 : session.period_type === 'block2' ? '80min · B2' : '40min · Reflection';
+    const challenge = session.challenge_number ? `<div class="node-session-challenge" style="color:${c.text};">Challenge ${session.challenge_number}</div>` : '';
+    return `
+      <div class="node-session" style="border-left:3px solid ${c.border};" data-session-id="${session.id}">
+        <div class="node-session-top">
+          <div class="node-session-num" style="background:${c.bg};color:${c.text};">S${session.number}</div>
+          <div class="node-session-badge">${period}</div>
+        </div>
+        <div class="node-session-name">${session.name}</div>
+        ${challenge}
+        <div class="node-session-mats">
+          <span class="mat-chip">📋 Lesson Plan</span>
+          <span class="mat-chip">📊 PPT</span>
+          <span class="mat-chip">📝 Worksheet</span>
+        </div>
+      </div>`;
+  }
+
+  function compNodeHTML(comp) {
+    const shortDesc = comp.description.length > 90 ? comp.description.substring(0,90)+'…' : comp.description;
+    return `
+      <div class="node-comp" data-comp-id="${comp.id}">
+        <div class="node-comp-code">${comp.msp_code}</div>
+        <div class="node-comp-sp">${comp.sp_name}</div>
+        <div class="node-comp-desc">${shortDesc}</div>
+      </div>`;
+  }
+
+  // ── Load framework ───────────────────────────────────────────
+  async function loadFramework() {
+    document.getElementById('load-btn').innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;animation:spin 1s linear infinite;">progress_activity</span> Loading…';
+
+    const resp = await fetch('/workflow/api/data/');
+    frameworkData = await resp.json();
+
+    editor.clear();
+    nodeIdMap = {};
+    document.getElementById('empty-state').style.display = 'none';
+
+    // If saved layout exists, restore it
+    if (frameworkData.saved_layout && Object.keys(frameworkData.saved_layout).length > 0) {
+      editor.import(frameworkData.saved_layout);
+      showToast('Layout restored from saved state', 'success');
+    } else {
+      autoLayout(frameworkData.weeks);
+    }
+
+    buildSessionList(frameworkData.weeks);
+    document.getElementById('load-btn').innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">download</span> Load Framework';
+    showToast('Framework loaded — ' + frameworkData.weeks.length + ' weeks, 18 sessions', 'success');
+  }
+
+  function autoLayout(weeks) {
+    const WEEK_Y    = 80;
+    const SESSION_Y = 310;
+    const COMP_Y    = 540;
+    const WEEK_GAP  = 760;
+    const SES_GAP   = 240;
+
+    weeks.forEach((week, wi) => {
+      const weekX = wi * WEEK_GAP + 340;
+      const weekNodeId = editor.addNode('week', 0, 1, weekX, WEEK_Y, 'week-node', { week }, weekNodeHTML(week));
+      nodeIdMap[`week_${week.id}`] = weekNodeId;
+
+      week.sessions.forEach((session, si) => {
+        const sx = wi * WEEK_GAP + si * SES_GAP + 100;
+        const sessionNodeId = editor.addNode('session', 1, 1, sx, SESSION_Y, 'session-node', { session, weekNum: week.number }, sessionNodeHTML(session, week.number));
+        nodeIdMap[`session_${session.id}`] = sessionNodeId;
+        editor.addConnection(weekNodeId, sessionNodeId, 'output_1', 'input_1');
+
+        session.competencies.forEach((comp, ci) => {
+          const col = ci % 2;
+          const row = Math.floor(ci / 2);
+          const cx = sx + col * 210 - 100;
+          const cy = COMP_Y + row * 170;
+          const compNodeId = editor.addNode('competency', 1, 0, cx, cy, 'comp-node', { comp }, compNodeHTML(comp));
+          nodeIdMap[`comp_${comp.id}`] = compNodeId;
+          editor.addConnection(sessionNodeId, compNodeId, 'output_1', 'input_1');
+        });
+      });
+    });
+  }
+
+  // ── Node click → right panel ─────────────────────────────────
+  editor.on('nodeSelected', id => {
+    selectedNodeId = id;
+    const nodeData = editor.getNodeFromId(id);
+    showNodePanel(nodeData);
+  });
+
+  editor.on('nodeUnselected', () => {
+    // keep panel open until user closes
+  });
+
+  function showNodePanel(nodeData) {
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('hidden-panel');
+    panel.style.width = '300px';
+
+    const name = nodeData.name;
+    const data = nodeData.data;
+
+    if (name === 'week') {
+      renderWeekPanel(data.week);
+    } else if (name === 'session') {
+      renderSessionPanel(data.session, data.weekNum);
+    } else if (name === 'competency') {
+      renderCompPanel(data.comp);
+    }
+  }
+
+  function closePanel() {
+    const panel = document.getElementById('right-panel');
+    panel.classList.add('hidden-panel');
+    panel.style.width = '0';
+  }
+
+  // ── Week panel ───────────────────────────────────────────────
+  function renderWeekPanel(week) {
+    const c = WEEK_COLORS[week.number] || WEEK_COLORS[1];
+    document.getElementById('rp-title').textContent = `Week ${week.number}: ${week.phase}`;
+    document.getElementById('rp-content').innerHTML = `
+      <div style="padding:12px;background:${c.bg};border:1px solid ${c.border}33;border-radius:10px;margin-bottom:16px;">
+        <div style="font-size:18px;font-weight:800;color:${c.label};margin-bottom:4px;">${week.phase}</div>
+        <div style="font-size:12px;color:#94a3b8;">${week.description}</div>
+      </div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:10px;">Kaushal Bodh Questions</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${week.kaushal_bodh_questions.map((q,i) => `
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="width:20px;height:20px;background:${c.bg};border:1px solid ${c.border}55;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${c.text};flex-shrink:0;">${i+1}</span>
+            <span style="font-size:12px;color:#94a3b8;line-height:1.5;">${q}</span>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  // ── Session panel ────────────────────────────────────────────
+  function renderSessionPanel(session, weekNum) {
+    const c = WEEK_COLORS[weekNum] || WEEK_COLORS[1];
+    document.getElementById('rp-title').textContent = `Session ${session.number}`;
+    document.getElementById('rp-content').innerHTML = `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:8px;">${session.name}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="padding:3px 9px;background:${c.bg};border:1px solid ${c.border}44;border-radius:6px;font-size:11px;font-weight:600;color:${c.text};">${session.period_display}</span>
+          ${session.challenge_number ? `<span style="padding:3px 9px;background:rgba(255,255,255,.05);border-radius:6px;font-size:11px;color:#64748b;">Ch. ${session.challenge_number}</span>` : ''}
+        </div>
+      </div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:6px;">Generic Template</div>
+      <p style="font-size:12px;color:#64748b;line-height:1.55;margin-bottom:16px;">${session.generic_description}</p>
+      ${session.weekly_objective_template ? `
+        <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:6px;">Weekly Objective Template</div>
+        <p style="font-size:12px;color:#64748b;line-height:1.55;margin-bottom:16px;">${session.weekly_objective_template}</p>` : ''}
+      <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#475569;margin-bottom:10px;">Competencies (${session.competencies.length})</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+        ${session.competencies.map(c => `
+          <div style="padding:8px 10px;background:#141520;border:1px solid #252840;border-radius:8px;">
+            <div style="font-size:11px;font-weight:800;font-family:monospace;color:#a78bfa;margin-bottom:2px;">${c.msp_code}</div>
+            <div style="font-size:11px;color:#64748b;">${c.sp_name}</div>
+          </div>`).join('')}
+      </div>
+      <button onclick="showAddCompForm(${session.id})" style="width:100%;padding:9px;background:rgba(124,58,237,.1);border:1px dashed rgba(124,58,237,.3);border-radius:8px;color:#a78bfa;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;" onmouseover="this.style.background='rgba(124,58,237,.2)'" onmouseout="this.style.background='rgba(124,58,237,.1)'">
+        <span class="material-symbols-outlined" style="font-size:16px;">add</span> Add Competency
+      </button>
+      <div id="add-comp-form" style="display:none;margin-top:12px;padding:12px;background:#141520;border:1px solid #252840;border-radius:10px;">
+        <div class="rp-field"><label class="rp-label">SP Code</label><input class="rp-input" id="nc-sp-code" placeholder="SP1" /></div>
+        <div class="rp-field"><label class="rp-label">SP Name</label><input class="rp-input" id="nc-sp-name" placeholder="Knowing Self" /></div>
+        <div class="rp-field"><label class="rp-label">MSP Code</label><input class="rp-input" id="nc-msp-code" placeholder="MSP1.C1" /></div>
+        <div class="rp-field"><label class="rp-label">Description</label><textarea class="rp-input" id="nc-desc" rows="3" placeholder="Competency description..."></textarea></div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="addCompetency(${session.id})" class="btn-primary" style="flex:1;justify-content:center;">Add</button>
+          <button onclick="document.getElementById('add-comp-form').style.display='none'" class="btn-ghost">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  function showAddCompForm(sessionId) {
+    document.getElementById('add-comp-form').style.display = 'block';
+  }
+
+  async function addCompetency(sessionId) {
+    const payload = {
+      session_id:  sessionId,
+      sp_code:     document.getElementById('nc-sp-code').value.trim() || 'SP1',
+      sp_name:     document.getElementById('nc-sp-name').value.trim() || 'New Competency',
+      msp_code:    document.getElementById('nc-msp-code').value.trim() || 'MSP1.C1',
+      description: document.getElementById('nc-desc').value.trim() || '',
+    };
+    const resp = await apiPost('/workflow/api/competency/add/', payload);
+    if (resp.status === 'created') {
+      const comp = resp.competency;
+      // Add node to canvas near the session node
+      const sessionNodeId = nodeIdMap[`session_${sessionId}`];
+      let cx = 300, cy = 540;
+      if (sessionNodeId) {
+        const sNode = editor.getNodeFromId(sessionNodeId);
+        cx = sNode.pos_x + 50;
+        cy = sNode.pos_y + 250;
+      }
+      const compNodeId = editor.addNode('competency', 1, 0, cx, cy, 'comp-node', { comp }, compNodeHTML(comp));
+      nodeIdMap[`comp_${comp.id}`] = compNodeId;
+      if (sessionNodeId) editor.addConnection(sessionNodeId, compNodeId, 'output_1', 'input_1');
+
+      // Update local data
+      if (frameworkData) {
+        frameworkData.weeks.forEach(w => w.sessions.forEach(s => {
+          if (s.id === sessionId) s.competencies.push(comp);
+        }));
+      }
+      showToast(`Competency ${comp.msp_code} added!`, 'success');
+      document.getElementById('add-comp-form').style.display = 'none';
+
+      // Refresh session panel
+      frameworkData.weeks.forEach(w => w.sessions.forEach(s => {
+        if (s.id === sessionId) renderSessionPanel(s, w.number);
+      }));
+    } else {
+      showToast('Failed to add competency', 'error');
+    }
+  }
+
+  // ── Competency panel ─────────────────────────────────────────
+  function renderCompPanel(comp) {
+    document.getElementById('rp-title').textContent = comp.msp_code;
+    document.getElementById('rp-content').innerHTML = `
+      <div class="rp-field">
+        <label class="rp-label">SP Code</label>
+        <input class="rp-input" id="edit-sp-code" value="${escHtml(comp.sp_code)}" />
+      </div>
+      <div class="rp-field">
+        <label class="rp-label">Sub-Pillar Name</label>
+        <input class="rp-input" id="edit-sp-name" value="${escHtml(comp.sp_name)}" />
+      </div>
+      <div class="rp-field">
+        <label class="rp-label">MSP Code</label>
+        <input class="rp-input" id="edit-msp-code" value="${escHtml(comp.msp_code)}" />
+      </div>
+      <div class="rp-field">
+        <label class="rp-label">Description</label>
+        <textarea class="rp-input" id="edit-desc" rows="6">${escHtml(comp.description)}</textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button onclick="saveComp(${comp.id})" class="btn-primary" style="flex:1;justify-content:center;display:flex;align-items:center;gap:6px;">
+          <span class="material-symbols-outlined" style="font-size:15px;">save</span>Save Changes
+        </button>
+        <button onclick="deleteComp(${comp.id})" class="btn-danger" title="Delete this competency">
+          <span class="material-symbols-outlined" style="font-size:15px;">delete</span>
+        </button>
+      </div>
+      <p style="font-size:11px;color:#334155;margin-top:10px;text-align:center;">Changes save directly to database</p>`;
+  }
+
+  async function saveComp(compId) {
+    const payload = {
+      id:          compId,
+      sp_code:     document.getElementById('edit-sp-code').value.trim(),
+      sp_name:     document.getElementById('edit-sp-name').value.trim(),
+      msp_code:    document.getElementById('edit-msp-code').value.trim(),
+      description: document.getElementById('edit-desc').value.trim(),
+    };
+    const resp = await apiPost('/workflow/api/competency/update/', payload);
+    if (resp.status === 'updated') {
+      // Update node HTML on canvas
+      const nodeId = nodeIdMap[`comp_${compId}`];
+      if (nodeId) {
+        const n = editor.getNodeFromId(nodeId);
+        n.data.comp = { ...n.data.comp, ...payload };
+        document.querySelector(`#node-${nodeId} .drawflow_content_node`).innerHTML = compNodeHTML(n.data.comp);
+      }
+      // Update title
+      document.getElementById('rp-title').textContent = payload.msp_code;
+      showToast(`${payload.msp_code} saved!`, 'success');
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }
+
+  async function deleteComp(compId) {
+    if (!confirm('Delete this competency from the database? This cannot be undone.')) return;
+    const resp = await apiPost('/workflow/api/competency/delete/', { id: compId });
+    if (resp.status === 'deleted') {
+      const nodeId = nodeIdMap[`comp_${compId}`];
+      if (nodeId) editor.removeNodeId('node-' + nodeId);
+      delete nodeIdMap[`comp_${compId}`];
+      closePanel();
+      showToast('Competency deleted', 'success');
+    } else {
+      showToast('Delete failed', 'error');
+    }
+  }
+
+  // ── Save layout ──────────────────────────────────────────────
+  async function saveLayout() {
+    const exportData = editor.export();
+    const resp = await apiPost('/workflow/api/save/', { canvas_data: exportData });
+    if (resp.status === 'saved') {
+      const s = document.getElementById('save-status');
+      s.textContent = '✓ Saved';
+      s.className = 'saved';
+      setTimeout(() => { s.textContent = ''; s.className = ''; }, 3000);
+      showToast('Layout saved!', 'success');
+    }
+  }
+
+  function clearCanvas() {
+    if (confirm('Clear the canvas? Saved layout in database will not be affected.')) {
+      editor.clear();
+      nodeIdMap = {};
+      document.getElementById('empty-state').style.display = 'flex';
+      closePanel();
+    }
+  }
+
+  // ── Session list sidebar ─────────────────────────────────────
+  function buildSessionList(weeks) {
+    const list = document.getElementById('session-list');
+    list.innerHTML = '';
+    weeks.forEach(week => {
+      const c = WEEK_COLORS[week.number] || WEEK_COLORS[1];
+      const header = document.createElement('div');
+      header.style.cssText = `font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${c.text};padding:10px 8px 4px;`;
+      header.textContent = `W${week.number} · ${week.phase}`;
+      list.appendChild(header);
+
+      week.sessions.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'palette-item';
+        item.dataset.sessionId = session.id;
+        item.innerHTML = `
+          <div style="width:22px;height:22px;background:${c.bg};border:1px solid ${c.border}44;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:${c.text};flex-shrink:0;">S${session.number}</div>
+          <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${session.name}</span>`;
+        item.onclick = () => {
+          const nodeId = nodeIdMap[`session_${session.id}`];
+          if (nodeId) {
+            editor.editor_selected = true;
+            showNodePanel(editor.getNodeFromId(nodeId));
+          }
+        };
+        list.appendChild(item);
+      });
+    });
+  }
+
+  function filterSessions(query) {
+    const items = document.querySelectorAll('#session-list .palette-item');
+    items.forEach(item => {
+      const visible = item.textContent.toLowerCase().includes(query.toLowerCase());
+      item.style.display = visible ? 'flex' : 'none';
+    });
+  }
+
+  // ── Drag & Drop from palette ─────────────────────────────────
+  function drag(ev) {
+    const el = ev.target.closest('[data-node]');
+    if (el) ev.dataTransfer.setData('text/plain', el.dataset.node);
+  }
+
+  function allowDrop(ev) { ev.preventDefault(); }
+
+  function drop(ev) {
+    ev.preventDefault();
+    const dragNodeType = ev.dataTransfer.getData('text/plain');
+    if (!dragNodeType) return;
+    const rect = editorEl.getBoundingClientRect();
+    const zoom = editor.zoom;
+    const x = (ev.clientX - rect.left - editor.canvas_x) / zoom;
+    const y = (ev.clientY - rect.top  - editor.canvas_y) / zoom;
+
+    if (dragNodeType === 'week') {
+      editor.addNode('week', 0, 1, x, y, 'week-node', { week: { id:0, number:1, phase:'Explore', description:'New week', kaushal_bodh_questions:[] }}, weekNodeHTML({number:1,phase:'Explore',description:'New week',kaushal_bodh_questions:[]}));
+    } else if (dragNodeType === 'session') {
+      editor.addNode('session', 1, 1, x, y, 'session-node', { session: { id:0, number:0, name:'New Session', period_type:'block1', period_display:'Block Period 1', challenge_number:null, generic_description:'', weekly_objective_template:'', competencies:[] }, weekNum:1 }, sessionNodeHTML({id:0,number:0,name:'New Session',period_type:'block1',period_display:'Block Period 1',challenge_number:null,generic_description:'',weekly_objective_template:'',competencies:[]}, 1));
+    } else if (dragNodeType === 'competency') {
+      editor.addNode('competency', 1, 0, x, y, 'comp-node', { comp: { id:0, sp_code:'SP1', sp_name:'New Competency', msp_code:'MSP1.C1', description:'Enter description here.' }}, compNodeHTML({id:0,sp_code:'SP1',sp_name:'New Competency',msp_code:'MSP1.C1',description:'Enter description here.'}));
+    }
+    document.getElementById('empty-state').style.display = 'none';
+  }
+
+  // ── API helpers ──────────────────────────────────────────────
+  async function apiPost(url, data) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  getCookie('csrftoken'),
+      },
+      body: JSON.stringify(data),
+    });
+    return resp.json();
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? v[2] : null;
+  }
+
+  function escHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Toast ────────────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(msg, type = 'success') {
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-msg').textContent = msg;
+    document.getElementById('toast-icon').textContent = type === 'success' ? 'check_circle' : 'error';
+    toast.className = type;
+    toast.style.display = 'flex';
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 2800);
+  }
+
+  // ── Auto-save layout on node move ────────────────────────────
+  let autoSaveTimer = null;
+  editor.on('nodeMoved', () => {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(saveLayout, 3000);
+  });
+
+  // ── Keyboard shortcuts ───────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveLayout(); }
+    if (e.key === 'Escape') closePanel();
+    if (e.key === 'Delete' && selectedNodeId) {
+      if (confirm('Delete selected node?')) {
+        editor.removeNodeId('node-' + selectedNodeId);
+        closePanel();
+      }
+    }
+  });
+
+  // ── Spin animation ───────────────────────────────────────────
+  const style = document.createElement('style');
+  style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+  document.head.appendChild(style);
+
+  // ── Auto-load on page start ──────────────────────────────────
+  loadFramework();
+</script>
+</body>
+</html>
