@@ -7,3 +7,4 @@ fsl_review_project_*.html
 __pycache__/
 *.pyc
 *.pyo
+workflow_editor/
