@@ -1,13 +1,15 @@
+import re
 import threading
 
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from framework.models import Week, Session
 from .models import Project, SessionContent, SessionVersion
+from .exports import build_project_docx
 from generation.tasks import generate_project_task, regenerate_session_task
 
 
@@ -125,10 +127,63 @@ def project_detail(request, pk):
         for sc in project.session_contents.select_related('session__week').all()
     }
 
+    # Per-week stats (approved / total sessions in that week)
+    week_stats = {}
+    for week in weeks:
+        sessions_in_week = list(week.sessions.all())
+        total = len(sessions_in_week)
+        approved = sum(
+            1 for s in sessions_in_week
+            if (sc := contents.get(s.number)) and sc.is_approved
+        )
+        week_stats[week.number] = {'approved': approved, 'total': total}
+
+    # Resolve tech-slot placeholders → admin-selected tech competencies (per session)
+    tech_codes = project.tech_competency or []
+    tech_descriptions = Project.TECH_DESCRIPTIONS
+
+    def _sp_name_from_code(code: str) -> str:
+        """e.g. 'MSP15.C1' → SP15 group label from TECH_CHOICES."""
+        for c, label in Project.TECH_CHOICES:
+            if c == code:
+                return label.split(':')[0].strip()
+        return code
+
+    session_competencies = {}
+    for week in weeks:
+        for session in week.sessions.all():
+            seen = set()
+            resolved = []
+            for comp in session.competencies.all():
+                if comp.is_tech_slot:
+                    for code in tech_codes:
+                        if code in seen:
+                            continue
+                        seen.add(code)
+                        resolved.append({
+                            'msp_code': code,
+                            'sp_name': _sp_name_from_code(code),
+                            'description': tech_descriptions.get(code, ''),
+                            'is_tech': True,
+                        })
+                else:
+                    if comp.msp_code in seen:
+                        continue
+                    seen.add(comp.msp_code)
+                    resolved.append({
+                        'msp_code': comp.msp_code,
+                        'sp_name': comp.sp_name,
+                        'description': comp.description,
+                        'is_tech': False,
+                    })
+            session_competencies[session.number] = resolved
+
     context = {
         'project': project,
         'weeks': weeks,
         'contents': contents,
+        'week_stats': week_stats,
+        'session_competencies': session_competencies,
     }
     return render(request, 'projects/detail.html', context)
 
@@ -243,6 +298,32 @@ def restore_version(request, pk, num):
     content.is_approved = False
     content.save(update_fields=['ai_description', 'is_approved', 'updated_at'])
     return JsonResponse({'status': 'restored', 'version_number': version.version_number})
+
+
+@require_POST
+def delete_project(request, pk):
+    """Permanently delete a project and all related session content."""
+    project = get_object_or_404(Project, pk=pk)
+    project.delete()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'deleted', 'pk': pk})
+    return redirect('dashboard')
+
+
+def export_project_docx(request, pk):
+    """Export a fully-formatted DOCX containing the latest content for the project."""
+    project = get_object_or_404(Project, pk=pk)
+    buf = build_project_docx(project)
+
+    safe_topic = re.sub(r'[^A-Za-z0-9_\-]+', '_', project.topic)[:60].strip('_') or 'project'
+    filename = f'Neorise_FSL_CUR-{project.pk:03d}_{safe_topic}.docx'
+
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 @require_POST

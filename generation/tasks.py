@@ -8,6 +8,11 @@ from framework.models import Session, Competency
 from projects.models import Project, SessionContent
 from .models import GenerationLog
 from .sample_output import SAMPLE_OUTPUT
+from .prompt_context import (
+    STRICT_COMPETENCY_RULE, PHILOSOPHY_SUMMARY, PROGRAM_CONSTRAINTS,
+    INDIAN_CONTEXT_GUIDELINES, QC_RUBRIC,
+    format_bom_summary, get_grade_persona,
+)
 
 
 def _clean_breakdown(text: str) -> str:
@@ -24,7 +29,8 @@ def _log(project, level, message):
     GenerationLog.objects.create(project=project, level=level, message=message)
 
 
-def _call_openrouter(prompt: str) -> tuple[str, int]:
+def _call_openrouter(prompt: str, system_prompt: str = '',
+                     max_tokens: int = 4096, temperature: float = 0.72) -> tuple[str, int]:
     """Call OpenRouter API, return (response_text, total_tokens)."""
     headers = {
         'Authorization': f'Bearer {settings.OPENROUTER_API_KEY}',
@@ -32,11 +38,15 @@ def _call_openrouter(prompt: str) -> tuple[str, int]:
         'HTTP-Referer': 'https://neorise-fsl.app',
         'X-Title': 'Neorise FSL',
     }
+    messages = []
+    if system_prompt:
+        messages.append({'role': 'system', 'content': system_prompt})
+    messages.append({'role': 'user', 'content': prompt})
     payload = {
         'model': settings.OPENROUTER_MODEL,
-        'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': 3000,
-        'temperature': 0.72,
+        'messages': messages,
+        'max_tokens': max_tokens,
+        'temperature': temperature,
     }
     resp = requests.post(
         'https://openrouter.ai/api/v1/chat/completions',
@@ -94,6 +104,29 @@ def _is_first_bp_of_week(session: Session) -> bool:
     return first and first.number == session.number
 
 
+def _build_system_prompt(project: Project) -> str:
+    """Assemble the static system-level context for the AI."""
+    grade_persona = get_grade_persona(project.grade)
+    bom = format_bom_summary()
+
+    return f"""You are an expert curriculum designer for the Neorise FSL \
+(Future Skills Lab) programme, creating content for Indian CBSE schools.
+
+{PHILOSOPHY_SUMMARY}
+
+{PROGRAM_CONSTRAINTS}
+
+{STRICT_COMPETENCY_RULE}
+
+{INDIAN_CONTEXT_GUIDELINES}
+
+{grade_persona}
+
+{bom}
+
+{QC_RUBRIC}"""
+
+
 def _build_prompt(project: Project, session: Session, custom_instructions: str = '',
                   include_weekly_brief: bool = False) -> str:
     week = session.week
@@ -143,9 +176,7 @@ Reference example (Human Services / MarTech topic) — match this quality, struc
 {sample_breakdown[:700] if sample_breakdown else '[No reference available]'}
 """ if sample_breakdown else ""
 
-    return f"""You are an expert curriculum designer for the Neorise FSL (Future Skills Lab) programme.
-
-PROJECT CONTEXT:
+    return f"""PROJECT CONTEXT:
 - Topic: {project.topic}
 - Grade: {project.grade}
 - Subject Track: {track_name}
@@ -200,6 +231,7 @@ def generate_project_task(project_id: int):
 
     sessions = Session.objects.select_related('week').prefetch_related('competencies').all()
     total_tokens = 0
+    system = _build_system_prompt(project)
 
     for session in sessions:
         try:
@@ -221,7 +253,7 @@ def generate_project_task(project_id: int):
             _log(project, 'STREAM',
                  f'← Token stream initiated · {settings.OPENROUTER_MODEL} · temperature=0.72')
 
-            text, tokens = _call_openrouter(prompt)
+            text, tokens = _call_openrouter(prompt, system_prompt=system)
             total_tokens += tokens
 
             # Parse weekly brief out of response if this is the first BP of the week
@@ -271,10 +303,11 @@ def regenerate_session_task(project_id: int, session_num: int, custom_instructio
          + (' · custom instructions provided' if custom_instructions else ''))
 
     try:
+        system = _build_system_prompt(project)
         prompt = _build_prompt(project, session, custom_instructions, include_weekly_brief=is_first)
         content.snapshot_version(custom_instructions=custom_instructions)
 
-        text, tokens = _call_openrouter(prompt)
+        text, tokens = _call_openrouter(prompt, system_prompt=system)
 
         weekly_brief = content.weekly_brief  # preserve existing unless first BP
         session_breakdown = _clean_breakdown(text)

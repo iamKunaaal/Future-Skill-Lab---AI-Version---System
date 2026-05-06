@@ -1,5 +1,10 @@
 from django.db import models
-from framework.models import Session
+from framework.models import Session, Week
+
+
+def _materials_upload_path(instance, filename):
+    """media/materials/project_<id>/week_<n>/<filename>"""
+    return f'materials/project_{instance.project_id}/week_{instance.week.number}/{filename}'
 
 
 class Project(models.Model):
@@ -79,6 +84,13 @@ class Project(models.Model):
     def sessions_pending(self):
         return self.sessions_generated - self.sessions_approved
 
+    @property
+    def phase1_complete(self):
+        """True when all 18 session descriptions have been generated.
+        Required gate before Phase 2 (materials generation) can run."""
+        total = self.sessions_total
+        return total > 0 and self.sessions_generated == total
+
 
 class SessionContent(models.Model):
     project              = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='session_contents')
@@ -116,6 +128,66 @@ class SessionContent(models.Model):
             ai_description=self.ai_description,
             custom_instructions=custom_instructions,
         )
+
+
+class WeeklyMaterials(models.Model):
+    """Phase 2 — AI-generated teaching materials per week.
+
+    Per week, 4 files are produced:
+      • Challenge Card PPTX (template-based)
+      • Lesson Plan DOCX (built from scratch)
+      • Session 1 PPT and Session 2 PPT (built from scratch)
+
+    The intermediate JSON content is stored so files can be regenerated/
+    re-rendered without re-calling the AI.
+    """
+    STATUS_PENDING    = 'pending'
+    STATUS_GENERATING = 'generating'
+    STATUS_READY      = 'ready'
+    STATUS_ERROR      = 'error'
+    STATUS_CHOICES = [
+        (STATUS_PENDING,    'Pending'),
+        (STATUS_GENERATING, 'Generating'),
+        (STATUS_READY,      'Ready'),
+        (STATUS_ERROR,      'Error'),
+    ]
+
+    project   = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='weekly_materials')
+    week      = models.ForeignKey(Week, on_delete=models.PROTECT, related_name='+')
+    status    = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    # AI-generated structured content (JSON) — drives the file builders
+    challenge_card_content = models.JSONField(default=dict, blank=True)
+    lesson_plan_content    = models.JSONField(default=dict, blank=True)
+    session1_ppt_content   = models.JSONField(default=dict, blank=True)
+    session2_ppt_content   = models.JSONField(default=dict, blank=True)
+
+    # Generated files
+    challenge_card_file = models.FileField(upload_to=_materials_upload_path, blank=True, null=True)
+    lesson_plan_file    = models.FileField(upload_to=_materials_upload_path, blank=True, null=True)
+    session1_ppt_file   = models.FileField(upload_to=_materials_upload_path, blank=True, null=True)
+    session2_ppt_file   = models.FileField(upload_to=_materials_upload_path, blank=True, null=True)
+
+    ai_tokens_used = models.PositiveIntegerField(default=0)
+    error_message  = models.TextField(blank=True)
+    generated_at   = models.DateTimeField(null=True, blank=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['week__number']
+        unique_together = [['project', 'week']]
+        verbose_name        = 'Weekly Materials'
+        verbose_name_plural = 'Weekly Materials'
+
+    def __str__(self):
+        return f"{self.project} · Week {self.week.number} ({self.get_status_display()})"
+
+    @property
+    def all_files_ready(self):
+        return all([
+            self.challenge_card_file, self.lesson_plan_file,
+            self.session1_ppt_file,   self.session2_ppt_file,
+        ])
 
 
 class SessionVersion(models.Model):

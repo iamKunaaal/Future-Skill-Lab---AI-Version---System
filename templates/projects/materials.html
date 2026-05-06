@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}Materials — {{ project.topic|truncatechars:40 }}{% endblock %}
+
+{% block extra_style %}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.spin-slow { animation: spin 2s linear infinite; }
+{% endblock %}
+
+{% block content %}
+
+{# Breadcrumb #}
+<nav class="flex gap-2 text-xs font-medium text-on-surface-variant mb-6">
+  <a href="{% url 'dashboard' %}" class="hover:text-primary transition-colors">Dashboard</a>
+  <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+  <a href="{% url 'project_detail' project.pk %}" class="hover:text-primary transition-colors">{{ project.topic|truncatechars:30 }}</a>
+  <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+  <span class="text-primary font-bold">Materials</span>
+</nav>
+
+{# Header #}
+<div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-8">
+  <div>
+    <p class="text-xs font-bold uppercase tracking-widest text-primary mb-1">Phase 2 — Teaching Materials</p>
+    <h1 class="text-3xl font-extrabold text-on-surface mb-2">{{ project.topic }}</h1>
+    <p class="text-sm text-on-surface-variant">
+      4 files per week × 9 weeks = 36 AI-generated files. Generate week-by-week or all at once.
+    </p>
+  </div>
+  <div class="flex gap-2 shrink-0">
+    {% if phase1_complete %}
+      <button id="btn-generate-all"
+              class="bg-primary text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors flex items-center gap-2">
+        <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+        Generate All Weeks
+      </button>
+    {% else %}
+      <span class="bg-amber-100 text-amber-800 px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2">
+        <span class="material-symbols-outlined text-[18px]">lock</span>
+        Phase 1 must be complete first
+      </span>
+    {% endif %}
+  </div>
+</div>
+
+{# Summary stats #}
+<div class="grid grid-cols-3 gap-3 mb-8">
+  <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+    <p class="text-xs font-bold uppercase text-slate-400 tracking-wider">Ready</p>
+    <p class="text-3xl font-extrabold text-teal-600 mt-1" id="stat-ready">{{ ready_count }}/{{ total_weeks }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+    <p class="text-xs font-bold uppercase text-slate-400 tracking-wider">Generating</p>
+    <p class="text-3xl font-extrabold text-amber-600 mt-1" id="stat-generating">{{ generating_count }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+    <p class="text-xs font-bold uppercase text-slate-400 tracking-wider">Not Started</p>
+    <p class="text-3xl font-extrabold text-slate-500 mt-1" id="stat-pending">{{ total_weeks|add:"-"|add:ready_count|add:"-"|add:generating_count }}</p>
+  </div>
+</div>
+
+{# Week Cards #}
+<div class="space-y-3" id="week-cards">
+  {% for row in rows %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm week-row" data-week="{{ row.week.number }}">
+    <div class="flex flex-col lg:flex-row lg:items-center gap-4 p-5">
+
+      {# Left: week label + status #}
+      <div class="flex items-center gap-4 flex-1 min-w-0">
+        <div class="w-14 h-14 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <p class="text-xl font-extrabold">W{{ row.week.number }}</p>
+        </div>
+        <div class="min-w-0">
+          <p class="text-base font-bold text-on-surface">{{ row.week.phase }}</p>
+          <p class="text-xs text-slate-500 truncate">{{ row.week.description }}</p>
+          <div class="mt-1 flex items-center gap-2 text-xs status-pill" data-week-status>
+            {% if row.is_ready %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-700 rounded font-bold">
+                <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>Ready
+              </span>
+              <span class="text-slate-400">{{ row.tokens }} tokens · {{ row.generated_at|date:"d M Y, H:i" }}</span>
+            {% elif row.is_generating %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">
+                <span class="material-symbols-outlined text-[12px] spin-slow">progress_activity</span>Generating...
+              </span>
+            {% elif row.is_error %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error
+              </span>
+              <span class="text-red-500 truncate">{{ row.error_message|truncatechars:100 }}</span>
+            {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-bold">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>Not Generated
+              </span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# Right: actions #}
+      <div class="flex flex-wrap items-center gap-2 shrink-0" data-week-actions>
+        {% if row.is_ready %}
+          <a href="{% url 'materials_download_cc' project.pk row.week.number %}"
+             class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">slideshow</span>Challenge Card
+          </a>
+          <a href="{% url 'materials_download_lp' project.pk row.week.number %}"
+             class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">description</span>Lesson Plan
+          </a>
+          <a href="{% url 'materials_download_ppt' project.pk row.week.number 1 %}"
+             class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">co_present</span>BP-1 PPT
+          </a>
+          <a href="{% url 'materials_download_ppt' project.pk row.week.number 2 %}"
+             class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">co_present</span>BP-2 PPT
+          </a>
+          <a href="{% url 'materials_download_zip' project.pk row.week.number %}"
+             class="px-3 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">folder_zip</span>All (.zip)
+          </a>
+          <button type="button" data-action-rebuild data-week="{{ row.week.number }}"
+            title="Re-render the 4 files from saved JSON. No AI calls — useful for design tweaks."
+            class="px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg flex items-center gap-1.5 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">build</span>Rebuild (free)
+          </button>
+          <div class="relative inline-block regen-menu">
+            <button type="button" data-toggle-menu
+              title="Regenerate AI content. Click for component options."
+              class="px-3 py-2 text-xs font-semibold text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg flex items-center gap-1.5 transition-colors">
+              <span class="material-symbols-outlined text-[14px]">refresh</span>Regenerate AI
+              <span class="material-symbols-outlined text-[14px]">arrow_drop_down</span>
+            </button>
+            <div data-menu-content
+              class="hidden absolute right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg w-56 py-1.5 text-sm">
+              <button type="button" data-action-regen data-week="{{ row.week.number }}"
+                class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-amber-50 text-amber-700 font-semibold">
+                <span class="material-symbols-outlined text-[16px]">refresh</span>All 4 files (full regen)
+              </button>
+              <div class="border-t border-slate-100 my-1"></div>
+              <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="challenge_card"
+                class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                <span class="material-symbols-outlined text-[16px]">slideshow</span>Challenge Card only
+              </button>
+              <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="lesson_plan"
+                class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                <span class="material-symbols-outlined text-[16px]">description</span>Lesson Plan only
+              </button>
+              <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="session1_ppt"
+                class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                <span class="material-symbols-outlined text-[16px]">co_present</span>BP-1 PPT only
+              </button>
+              <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="session2_ppt"
+                class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
+                <span class="material-symbols-outlined text-[16px]">co_present</span>BP-2 PPT only
+              </button>
+            </div>
+          </div>
+        {% elif row.is_generating %}
+          <span class="text-xs text-amber-600 font-semibold flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px] spin-slow">progress_activity</span>
+            AI is working...
+          </span>
+        {% else %}
+          {% if phase1_complete %}
+            <button type="button" data-action-regen data-week="{{ row.week.number }}"
+              class="bg-primary text-white px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-primary/90 transition-colors">
+              <span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+              Generate
+            </button>
+          {% else %}
+            <span class="text-xs text-slate-400 italic">Generate sessions first</span>
+          {% endif %}
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const CSRF = '{{ csrf_token }}';
+  const STATUS_URL = "{% url 'materials_status' project.pk %}";
+  const GEN_BASE     = "{% url 'materials_generate_week' project.pk 0 %}";
+  const REBUILD_BASE = "{% url 'materials_rebuild_week' project.pk 0 %}";
+  const REGEN_PART   = "{% url 'materials_regen_component' project.pk 0 'challenge_card' %}";
+  const GEN_ALL      = "{% url 'materials_generate_all' project.pk %}";
+
+  // Optimistically swap the clicked row's UI into a "Generating..." state
+  // so the user gets immediate feedback. The polling loop will reload the
+  // page when generation completes.
+  function setRowGenerating(weekNum, label) {
+    const row = document.querySelector('.week-row[data-week="' + weekNum + '"]');
+    if (!row) return;
+    const status = row.querySelector('[data-week-status]');
+    if (status) {
+      status.innerHTML = `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">
+          <span class="material-symbols-outlined text-[12px] spin-slow">progress_activity</span>${label}
+        </span>`;
+    }
+    const actions = row.querySelector('[data-week-actions]');
+    if (actions) {
+      actions.innerHTML = `
+        <span class="text-xs text-amber-600 font-semibold flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[14px] spin-slow">progress_activity</span>
+          AI is working...
+        </span>`;
+    }
+    // Bump live counters
+    const genStat = document.getElementById('stat-generating');
+    if (genStat) genStat.textContent = (parseInt(genStat.textContent || '0', 10) + 1);
+  }
+
+  function setRowError(weekNum, message) {
+    const row = document.querySelector('.week-row[data-week="' + weekNum + '"]');
+    if (!row) return;
+    const status = row.querySelector('[data-week-status]');
+    if (status) {
+      status.innerHTML = `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error
+        </span>
+        <span class="text-red-500 truncate">${message}</span>`;
+    }
+  }
+
+  async function triggerWeek(weekNum) {
+    setRowGenerating(weekNum, 'Generating...');
+    const url = GEN_BASE.replace(/\/0\/$/, '/' + weekNum + '/');
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    try {
+      const r = await fetch(url, { method: 'POST', body: fd });
+      if (!r.ok) {
+        const txt = await r.text();
+        setRowError(weekNum, 'Failed to start');
+        alert('Failed: ' + txt.slice(0, 200));
+        return;
+      }
+    } catch (e) {
+      setRowError(weekNum, 'Network error');
+      return;
+    }
+    pollStatus();
+    if (!pollHandle) startPolling();
+  }
+
+  async function rebuildWeek(weekNum) {
+    setRowGenerating(weekNum, 'Rebuilding files...');
+    const url = REBUILD_BASE.replace(/\/0\/$/, '/' + weekNum + '/');
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    try {
+      const r = await fetch(url, { method: 'POST', body: fd });
+      if (!r.ok) {
+        const txt = await r.text();
+        setRowError(weekNum, 'Rebuild failed');
+        alert('Rebuild failed: ' + txt.slice(0, 200));
+        return;
+      }
+    } catch (e) {
+      setRowError(weekNum, 'Network error');
+      return;
+    }
+    pollStatus();
+    if (!pollHandle) startPolling();
+  }
+
+  document.querySelectorAll('[data-action-regen]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Regenerate AI content for Week ' + btn.dataset.week + '? Uses 4 fresh AI calls.')) return;
+      triggerWeek(btn.dataset.week);
+    });
+  });
+
+  document.querySelectorAll('[data-action-rebuild]').forEach(btn => {
+    btn.addEventListener('click', () => rebuildWeek(btn.dataset.week));
+  });
+
+  // Per-component regen — only re-runs ONE AI call (cheap + fast)
+  const COMPONENT_LABELS = {
+    challenge_card: 'Challenge Card',
+    lesson_plan:    'Lesson Plan',
+    session1_ppt:   'BP-1 PPT',
+    session2_ppt:   'BP-2 PPT',
+  };
+
+  async function regenerateComponent(weekNum, component) {
+    const label = COMPONENT_LABELS[component] || component;
+    if (!confirm('Regenerate ' + label + ' for Week ' + weekNum + '? Uses 1 AI call (faster + cheaper than full regen).')) return;
+    setRowGenerating(weekNum, 'Regenerating ' + label + '...');
+    // REGEN_PART contains placeholder week=0 + component='challenge_card'
+    const url = REGEN_PART.replace(/\/0\/challenge_card\/$/, '/' + weekNum + '/' + component + '/');
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    try {
+      const r = await fetch(url, { method: 'POST', body: fd });
+      if (!r.ok) {
+        const txt = await r.text();
+        setRowError(weekNum, 'Component regen failed');
+        alert('Failed: ' + txt.slice(0, 200));
+        return;
+      }
+    } catch (e) {
+      setRowError(weekNum, 'Network error');
+      return;
+    }
+    pollStatus();
+    if (!pollHandle) startPolling();
+  }
+
+  document.querySelectorAll('[data-action-regen-part]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      regenerateComponent(btn.dataset.week, btn.dataset.component);
+    });
+  });
+
+  // Click-toggle for the Regenerate AI dropdown — more reliable than hover
+  function closeAllMenus() {
+    document.querySelectorAll('[data-menu-content]').forEach(m => m.classList.add('hidden'));
+  }
+
+  document.querySelectorAll('[data-toggle-menu]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wrapper = btn.closest('.regen-menu');
+      if (!wrapper) return;
+      const menu = wrapper.querySelector('[data-menu-content]');
+      const isOpen = menu && !menu.classList.contains('hidden');
+      closeAllMenus();
+      if (menu && !isOpen) {
+        menu.classList.remove('hidden');
+        // Smart positioning: flip upward if not enough room below
+        const btnRect = btn.getBoundingClientRect();
+        const menuH   = menu.offsetHeight || 280;
+        const spaceBelow = window.innerHeight - btnRect.bottom;
+        if (spaceBelow < menuH + 20) {
+          // Not enough room below — open upward
+          menu.classList.remove('top-full', 'mt-1');
+          menu.classList.add('bottom-full', 'mb-1');
+        } else {
+          menu.classList.remove('bottom-full', 'mb-1');
+          menu.classList.add('top-full', 'mt-1');
+        }
+      }
+    });
+  });
+
+  // Click outside → close
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.regen-menu')) closeAllMenus();
+  });
+
+  // Esc → close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllMenus();
+  });
+
+  const allBtn = document.getElementById('btn-generate-all');
+  if (allBtn) {
+    allBtn.addEventListener('click', async () => {
+      if (!confirm('Generate materials for ALL 9 weeks? This will make ~36 AI calls.')) return;
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', CSRF);
+      const r = await fetch(GEN_ALL, { method: 'POST', body: fd });
+      if (!r.ok) { alert('Failed to start.'); return; }
+      pollStatus();
+      if (!pollHandle) startPolling();
+    });
+  }
+
+  let pollHandle = null;
+  function startPolling() {
+    pollHandle = setInterval(pollStatus, 3000);
+  }
+
+  async function pollStatus() {
+    try {
+      const r = await fetch(STATUS_URL);
+      if (!r.ok) return;
+      const data = await r.json();
+      let anyGenerating = false;
+      let ready = 0, generating = 0;
+      data.rows.forEach(row => {
+        if (row.status === 'generating') { anyGenerating = true; generating += 1; }
+        if (row.status === 'ready') ready += 1;
+      });
+      document.getElementById('stat-ready').textContent = ready + '/{{ total_weeks }}';
+      document.getElementById('stat-generating').textContent = generating;
+      // If something just became ready while we were polling, reload to show downloads
+      const prevReadyTotal = parseInt(document.body.dataset.lastReady || '{{ ready_count }}', 10);
+      if (ready > prevReadyTotal) {
+        document.body.dataset.lastReady = ready;
+        // Reload to surface download buttons cleanly
+        location.reload();
+        return;
+      }
+      document.body.dataset.lastReady = ready;
+      if (!anyGenerating && pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // Auto-start polling if anything is currently generating
+  if ({{ generating_count }} > 0) startPolling();
+</script>
+{% endblock %}

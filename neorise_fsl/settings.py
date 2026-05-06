@@ -75,11 +75,29 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
+# Media (uploaded + generated files)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenRouter
 OPENROUTER_API_KEY = env('OPENROUTER_API_KEY')
 OPENROUTER_MODEL = env('OPENROUTER_MODEL', default='anthropic/claude-sonnet-4-5')
+
+# Unsplash (free stock photos for Phase 2 PPTs).
+# Sign up at https://unsplash.com/developers — free tier = 50 requests/hour.
+# Without a key, slides fall back to text placeholders.
+UNSPLASH_ACCESS_KEY = env('UNSPLASH_ACCESS_KEY', default='')
+
+# APIYI — OpenAI-compatible proxy for AI image generation. When set, used as
+# the PRIMARY image source (LoremFlickr/Unsplash become fallbacks).
+APIYI_API_KEY      = env('APIYI_API_KEY',      default='')
+APIYI_BASE_URL     = env('APIYI_BASE_URL',     default='https://api.apiyi.com/v1')
+APIYI_IMAGE_MODEL  = env('APIYI_IMAGE_MODEL',  default='dall-e-3')
+# Comma-separated list of models to round-robin through. If empty, uses
+# APIYI_IMAGE_MODEL only. Example: 'dall-e-3,dall-e-2,gpt-image-1'
+APIYI_IMAGE_MODELS = env('APIYI_IMAGE_MODELS', default='')
 
 # Celery
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')
