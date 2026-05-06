@@ -2,6 +2,7 @@
 import json
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from celery import shared_task
@@ -16,6 +17,68 @@ def _enabled(component: str) -> bool:
                                 ['challenge_card', 'lesson_plan',
                                  'session1_ppt', 'session2_ppt'])
 
+
+def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
+                                   sessions_data, kb_questions, project_id,
+                                   week_number):
+    """Run LP as 1 overview call + N session calls in parallel.
+    ~3x faster than the monolithic 1-call version."""
+    from .materials_prompts import build_lp_overview_prompt, build_lp_session_prompt
+
+    jobs = []  # (label, callable returning (label, dict, tokens))
+
+    def _overview_job():
+        sys_p, user_p = build_lp_overview_prompt(
+            project, week, weekly_brief, competencies, kb_questions)
+        d, tok = _call_with_json_retry(
+            user_p, system_prompt=sys_p, max_tokens=3500,
+            project_id=project_id, label=f'W{week_number} · LP Overview')
+        return ('overview', d, tok)
+
+    def _session_job(idx, sd):
+        sys_p, user_p = build_lp_session_prompt(
+            project, week, weekly_brief, competencies, sd, kb_questions)
+        d, tok = _call_with_json_retry(
+            user_p, system_prompt=sys_p, max_tokens=3500,
+            project_id=project_id, label=f'W{week_number} · LP S{sd.get("number", idx + 1)}')
+        return (('session', idx), d, tok)
+
+    jobs.append(_overview_job)
+    for idx, sd in enumerate(sessions_data[:2]):
+        jobs.append(lambda i=idx, s=sd: _session_job(i, s))
+
+    overview = {}
+    sessions_out = [{}, {}]
+    total_tokens = 0
+    last_err = None
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+        futures = [ex.submit(j) for j in jobs]
+        for f in as_completed(futures):
+            try:
+                key, data, tok = f.result()
+                total_tokens += tok
+                if key == 'overview':
+                    overview = data
+                else:
+                    _, idx = key
+                    if idx < 2:
+                        sessions_out[idx] = data
+            except Exception as e:
+                last_err = e
+
+    if last_err and not overview:
+        # Overview failure is fatal; sessions can fail-soft
+        raise last_err
+
+    merged = {
+        'weekly_overview':   overview.get('weekly_overview', ''),
+        'knowledge_focus':   overview.get('knowledge_focus', ''),
+        'competency_rubric': overview.get('competency_rubric', []),
+        'sessions':          [s for s in sessions_out if s],
+    }
+    return merged, total_tokens
+
 from framework.models import Week, Session
 from projects.models import Project, SessionContent, WeeklyMaterials
 from projects.materials_exports import (
@@ -26,6 +89,7 @@ from projects.exports import _resolve_competencies as resolve_session_competenci
 from .tasks import _call_openrouter
 from .materials_prompts import (
     build_challenge_card_prompt, build_lesson_plan_prompt, build_session_ppt_prompt,
+    build_lp_overview_prompt, build_lp_session_prompt,
 )
 from .models import GenerationLog
 
@@ -288,15 +352,13 @@ def _do_generate_week(project_id: int, week_number: int):
         else:
             _log(project_id, 'SKIP', f'W{week_number} · Challenge Card disabled')
 
-        # ── Call 2: Lesson Plan ───────────────────────────────────────
+        # ── Call 2: Lesson Plan (3 parallel sub-calls — overview + 2 sessions) ─
         if _enabled('lesson_plan'):
-            _log(project_id, 'STREAM', f'W{week_number} · Generating Lesson Plan content...')
-            sys_p, user_p = build_lesson_plan_prompt(
-                project, week, weekly_brief, competencies, sessions_data, kb_questions,
-            )
-            lp_content, tok = _call_with_json_retry(
-                user_p, system_prompt=sys_p, max_tokens=10000,
-                project_id=project_id, label=f'W{week_number} · LP',
+            _log(project_id, 'STREAM',
+                 f'W{week_number} · Generating Lesson Plan (3 parallel calls)...')
+            lp_content, tok = _generate_lesson_plan_parallel(
+                project, week, weekly_brief, competencies, sessions_data,
+                kb_questions, project_id, week_number,
             )
             total_tokens += tok
             wm.lesson_plan_content = lp_content
@@ -431,13 +493,10 @@ def _do_regenerate_component(project_id: int, week_number: int, component: str):
                 ContentFile(cc_buf.getvalue()), save=False)
 
         elif component == 'lesson_plan':
-            _log(project_id, 'STREAM', f'W{week_number} · LP regen...')
-            sys_p, user_p = build_lesson_plan_prompt(
-                project, week, weekly_brief, competencies, sessions_data, kb_questions,
-            )
-            lp_content, tok = _call_with_json_retry(
-                user_p, system_prompt=sys_p, max_tokens=10000,
-                project_id=project_id, label=f'W{week_number} · LP',
+            _log(project_id, 'STREAM', f'W{week_number} · LP regen (parallel)...')
+            lp_content, tok = _generate_lesson_plan_parallel(
+                project, week, weekly_brief, competencies, sessions_data,
+                kb_questions, project_id, week_number,
             )
             total_tokens += tok
             wm.lesson_plan_content = lp_content

@@ -202,6 +202,113 @@ Return JSON exactly matching this schema:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# LESSON PLAN — SPLIT BUILDERS (parallel, ~3x faster than monolithic)
+# ─────────────────────────────────────────────────────────────────────
+LP_OVERVIEW_SCHEMA = """{
+  "weekly_overview": "2-3 paragraphs in markdown — the teacher's mental model for the week",
+  "knowledge_focus": "Bullet list (markdown) of the concrete concepts/skills students leave the week with",
+  "competency_rubric": [
+    {"code": "MSP__.C_", "name": "Competency name",
+     "levels": ["Beginning desc 5-12 words", "Developing 5-12 words", "Proficient 5-12 words", "Mastery 5-12 words"]}
+  ]
+}"""
+
+LP_SESSION_SCHEMA = """{
+  "objectives":        ["Specific learning objective 1", "Objective 2"],
+  "materials":         ["Material 1", "Material 2"],
+  "activities": [
+    {
+      "name":               "Hook / activity name",
+      "duration":           "12 min",
+      "description":        "What happens — 2-4 sentences. May use markdown.",
+      "facilitation_notes": "Teacher cues: what to watch for, where students typically struggle"
+    }
+  ],
+  "closure":           "How to wrap up — 1-2 sentences",
+  "portfolio_points":  ["What the student takes away into their portfolio"]
+}"""
+
+
+def build_lp_overview_prompt(project: Project, week: Week, weekly_brief: str,
+                             competencies: list, kb_questions: list):
+    """Just the weekly framing — overview + rubric + knowledge focus.
+    Lightweight (~2-3K tokens), runs in parallel with session prompts."""
+    sys_p = _system_prompt(project)
+    comp_list = '\n'.join(
+        f'- {c["msp_code"]} ({c["sp_name"]}): {c["description"]}'
+        for c in competencies
+    )
+    kb_list = '\n'.join(f'- {q}' for q in kb_questions) or '—'
+
+    user_p = f"""TASK: Generate the WEEKLY FRAMING section of a lesson plan \
+(overview, knowledge focus, competency rubric). Session-by-session activities \
+will come from a separate parallel call — DO NOT include sessions here.
+
+PROJECT CONTEXT:
+{_project_header(project, week)}
+
+WEEKLY BRIEF (finalised):
+{weekly_brief or '—'}
+
+COMPETENCIES TO ADDRESS:
+{comp_list or '—'}
+
+KAUSHAL BODH QUESTIONS:
+{kb_list}
+
+{STRICT_COMPETENCY_RULE}
+
+REQUIREMENTS:
+- Rubric: 1 row per competency listed. Each level descriptor 5-12 words, specific.
+- Examples: India-grounded, grade-appropriate.
+
+Return JSON exactly matching this schema:
+{LP_OVERVIEW_SCHEMA}"""
+    return sys_p, user_p
+
+
+def build_lp_session_prompt(project: Project, week: Week, weekly_brief: str,
+                            competencies: list, session_data: dict,
+                            kb_questions: list):
+    """One session of the lesson plan — fast call (~2-3K tokens)."""
+    sys_p = _system_prompt(project)
+    comp_list = '\n'.join(
+        f'- {c["msp_code"]} ({c["sp_name"]}): {c["description"]}'
+        for c in competencies
+    )
+    kb_list = '\n'.join(f'- {q}' for q in kb_questions) or '—'
+
+    user_p = f"""TASK: Generate ONE SESSION's portion of the weekly lesson plan.
+
+PROJECT CONTEXT:
+{_project_header(project, week)}
+
+WEEKLY BRIEF (finalised):
+{weekly_brief or '—'}
+
+THIS SESSION (already approved description):
+--- BP{session_data.get('number', '?')}: {session_data.get('name', '')} ---
+{session_data.get('ai_description', '') or '(no description)'}
+
+COMPETENCIES (for context only — rubric handled separately):
+{comp_list or '—'}
+
+KAUSHAL BODH (for context):
+{kb_list}
+
+{STRICT_COMPETENCY_RULE}
+
+REQUIREMENTS:
+- 5 timed activities adding up to 80 minutes (Hook → Investigate → Make → Share → Close).
+- Facilitation notes must be specific + actionable.
+- Examples India-grounded, grade-appropriate.
+
+Return JSON exactly matching this schema:
+{LP_SESSION_SCHEMA}"""
+    return sys_p, user_p
+
+
+# ─────────────────────────────────────────────────────────────────────
 # SESSION PPT
 # ─────────────────────────────────────────────────────────────────────
 SESSION_PPT_SCHEMA = """{
