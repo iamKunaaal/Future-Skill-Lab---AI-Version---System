@@ -5,8 +5,16 @@ import logging
 from datetime import datetime
 
 from celery import shared_task
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils import timezone
+
+
+def _enabled(component: str) -> bool:
+    """Check if a materials component is enabled in this deployment."""
+    return component in getattr(settings, 'MATERIALS_COMPONENTS',
+                                ['challenge_card', 'lesson_plan',
+                                 'session1_ppt', 'session2_ppt'])
 
 from framework.models import Week, Session
 from projects.models import Project, SessionContent, WeeklyMaterials
@@ -127,7 +135,7 @@ def _log(project_id: int, level: str, message: str):
 
 def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
                           max_tokens: int = 4096,
-                          retries: int = 1, project_id: int = 0,
+                          retries: int = 3, project_id: int = 0,
                           label: str = '') -> tuple[dict, int]:
     """Call OpenRouter expecting JSON, with self-healing retry on parse fail.
 
@@ -147,25 +155,59 @@ def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
                  f'{label} · JSON parse failed, asking model to fix...')
 
     for attempt in range(retries):
-        repair_prompt = (
-            "The previous JSON response failed to parse. Output ONLY the "
-            "corrected JSON object — no prose, no markdown fences, no "
-            "explanation. Return strictly valid JSON matching the schema "
-            "from the original task. Common issues to fix: unescaped quotes "
-            "inside strings, newlines inside string values, trailing commas, "
-            "missing commas between fields.\n\n"
-            "ORIGINAL TASK:\n"
-            f"{user_prompt[-3000:]}\n\n"
-            "BROKEN JSON YOU PRODUCED (fix it):\n"
-            f"{text[-6000:]}"
-        )
-        text, tok = _call_openrouter(repair_prompt, system_prompt=system_prompt,
-                                     max_tokens=max_tokens, temperature=0.2)
+        # Strategy:
+        #  attempt 0 — repair the broken JSON (send full broken blob)
+        #  attempt 1 — re-do task fresh at temperature 0
+        #  attempt 2 — re-do task fresh, asking for compact single-line JSON
+        if attempt == 0:
+            repair_prompt = (
+                "Your previous response was NOT valid JSON. Output ONLY the "
+                "corrected JSON object — no prose, no markdown fences, no "
+                "explanation, no leading/trailing text. Start with { and end "
+                "with }. Common issues to fix: unescaped double-quotes inside "
+                "strings (use \\\"), literal newlines inside string values "
+                "(replace with \\n or a space), trailing commas, missing "
+                "commas between fields, smart quotes (use plain \" and ').\n\n"
+                "BROKEN JSON YOU PRODUCED — fix it and return the FULL "
+                "corrected object:\n"
+                f"{text}"
+            )
+            new_text, tok = _call_openrouter(
+                repair_prompt, system_prompt=system_prompt,
+                max_tokens=max_tokens, temperature=0.1,
+            )
+        elif attempt == 1:
+            # Fresh attempt — original prompt at temp 0
+            new_text, tok = _call_openrouter(
+                user_prompt, system_prompt=system_prompt,
+                max_tokens=max_tokens, temperature=0.0,
+            )
+        else:
+            # Last resort — emphasise compact JSON, no prose, escape quotes
+            strict_prompt = (
+                user_prompt
+                + "\n\n========\nIMPORTANT JSON RULES — read carefully:\n"
+                "- Output ONLY a JSON object. No markdown fences. No prose.\n"
+                "- Inside string values: escape every internal double-quote "
+                "as \\\". Do NOT use single quotes for keys or strings.\n"
+                "- Replace newlines inside string values with a space.\n"
+                "- Do NOT include trailing commas.\n"
+                "- Start the response with { and end with }.\n"
+            )
+            new_text, tok = _call_openrouter(
+                strict_prompt, system_prompt=system_prompt,
+                max_tokens=max_tokens, temperature=0.0,
+            )
+
         total_tokens += tok
         try:
-            return _parse_json_response(text), total_tokens
+            return _parse_json_response(new_text), total_tokens
         except Exception as e:
             last_err = e
+            text = new_text  # use latest broken text for next repair attempt
+            if project_id:
+                _log(project_id, 'STREAM',
+                     f'{label} · retry {attempt + 1}/{retries} failed, trying again...')
 
     # All retries exhausted
     raise last_err if last_err else ValueError('JSON parse failed')
@@ -225,40 +267,53 @@ def _do_generate_week(project_id: int, week_number: int):
         sessions_data = _sessions_data_for_week(project, week)
         kb_questions = week.kaushal_bodh_questions or []
 
+        cc_content = {}
+        lp_content = {}
+        ppt_contents = [{}, {}]
+
         # ── Call 1: Challenge Card ────────────────────────────────────
-        _log(project_id, 'STREAM', f'W{week_number} · Generating Challenge Card content...')
-        sys_p, user_p = build_challenge_card_prompt(
-            project, week, weekly_brief, competencies, kb_questions,
-        )
-        cc_content, tok = _call_with_json_retry(
-            user_p, system_prompt=sys_p, max_tokens=2500,
-            project_id=project_id, label=f'W{week_number} · CC',
-        )
-        total_tokens += tok
-        wm.challenge_card_content = cc_content
-        wm.save(update_fields=['challenge_card_content', 'updated_at'])
-        _log(project_id, 'TOKEN', f'W{week_number} · Challenge Card · {tok} tokens')
+        if _enabled('challenge_card'):
+            _log(project_id, 'STREAM', f'W{week_number} · Generating Challenge Card content...')
+            sys_p, user_p = build_challenge_card_prompt(
+                project, week, weekly_brief, competencies, kb_questions,
+            )
+            cc_content, tok = _call_with_json_retry(
+                user_p, system_prompt=sys_p, max_tokens=2500,
+                project_id=project_id, label=f'W{week_number} · CC',
+            )
+            total_tokens += tok
+            wm.challenge_card_content = cc_content
+            wm.save(update_fields=['challenge_card_content', 'updated_at'])
+            _log(project_id, 'TOKEN', f'W{week_number} · Challenge Card · {tok} tokens')
+        else:
+            _log(project_id, 'SKIP', f'W{week_number} · Challenge Card disabled')
 
         # ── Call 2: Lesson Plan ───────────────────────────────────────
-        _log(project_id, 'STREAM', f'W{week_number} · Generating Lesson Plan content...')
-        sys_p, user_p = build_lesson_plan_prompt(
-            project, week, weekly_brief, competencies, sessions_data, kb_questions,
-        )
-        lp_content, tok = _call_with_json_retry(
-            user_p, system_prompt=sys_p, max_tokens=10000,
-            project_id=project_id, label=f'W{week_number} · LP',
-        )
-        total_tokens += tok
-        wm.lesson_plan_content = lp_content
-        wm.save(update_fields=['lesson_plan_content', 'updated_at'])
-        _log(project_id, 'TOKEN', f'W{week_number} · Lesson Plan · {tok} tokens')
+        if _enabled('lesson_plan'):
+            _log(project_id, 'STREAM', f'W{week_number} · Generating Lesson Plan content...')
+            sys_p, user_p = build_lesson_plan_prompt(
+                project, week, weekly_brief, competencies, sessions_data, kb_questions,
+            )
+            lp_content, tok = _call_with_json_retry(
+                user_p, system_prompt=sys_p, max_tokens=10000,
+                project_id=project_id, label=f'W{week_number} · LP',
+            )
+            total_tokens += tok
+            wm.lesson_plan_content = lp_content
+            wm.save(update_fields=['lesson_plan_content', 'updated_at'])
+            _log(project_id, 'TOKEN', f'W{week_number} · Lesson Plan · {tok} tokens')
+        else:
+            _log(project_id, 'SKIP', f'W{week_number} · Lesson Plan disabled')
 
         # ── Call 3 & 4: Session PPTs ──────────────────────────────────
         sessions_in_week = list(week.sessions.order_by('number'))
-        ppt_contents = []
         lp_sessions = lp_content.get('sessions', []) if isinstance(lp_content, dict) else []
 
         for idx, s in enumerate(sessions_in_week[:2]):
+            comp_key = f'session{idx + 1}_ppt'
+            if not _enabled(comp_key):
+                _log(project_id, 'SKIP', f'W{week_number} · Session {s.number} PPT disabled')
+                continue
             _log(project_id, 'STREAM', f'W{week_number} · Generating Session {s.number} PPT content...')
             sd = sessions_data[idx] if idx < len(sessions_data) else {}
             comps_for_s = resolve_session_competencies(s, project)
@@ -275,30 +330,32 @@ def _do_generate_week(project_id: int, week_number: int):
                 project_id=project_id, label=f'W{week_number} · S{s.number} PPT',
             )
             total_tokens += tok
-            ppt_contents.append(ppt_content)
+            ppt_contents[idx] = ppt_content
             _log(project_id, 'TOKEN', f'W{week_number} · Session {s.number} PPT · {tok} tokens')
 
-        # Pad if only one session in week (shouldn't happen but be safe)
-        while len(ppt_contents) < 2:
-            ppt_contents.append({})
         wm.session1_ppt_content = ppt_contents[0]
         wm.session2_ppt_content = ppt_contents[1]
         wm.save(update_fields=['session1_ppt_content', 'session2_ppt_content', 'updated_at'])
 
-        # ── Build files ───────────────────────────────────────────────
+        # ── Build files (only enabled ones) ───────────────────────────
         _log(project_id, 'INJECT', f'W{week_number} · Building files...')
 
-        cc_buf = build_challenge_card_pptx(project, week, cc_content)
-        wm.challenge_card_file.save(
-            f'challenge_card_w{week_number}.pptx',
-            ContentFile(cc_buf.getvalue()), save=False)
+        if _enabled('challenge_card') and cc_content:
+            cc_buf = build_challenge_card_pptx(project, week, cc_content)
+            wm.challenge_card_file.save(
+                f'challenge_card_w{week_number}.pptx',
+                ContentFile(cc_buf.getvalue()), save=False)
 
-        lp_buf = build_lesson_plan_docx(project, week, lp_content)
-        wm.lesson_plan_file.save(
-            f'lesson_plan_w{week_number}.docx',
-            ContentFile(lp_buf.getvalue()), save=False)
+        if _enabled('lesson_plan') and lp_content:
+            lp_buf = build_lesson_plan_docx(project, week, lp_content)
+            wm.lesson_plan_file.save(
+                f'lesson_plan_w{week_number}.docx',
+                ContentFile(lp_buf.getvalue()), save=False)
 
         for idx, s in enumerate(sessions_in_week[:2]):
+            comp_key = f'session{idx + 1}_ppt'
+            if not _enabled(comp_key) or not ppt_contents[idx]:
+                continue
             buf = build_session_pptx(project, s, ppt_contents[idx])
             field_name = 'session1_ppt_file' if idx == 0 else 'session2_ppt_file'
             getattr(wm, field_name).save(

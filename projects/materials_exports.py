@@ -298,43 +298,49 @@ def build_challenge_card_pptx(project: Project, week: Week, content: dict) -> io
     _add_rect(slide, Inches(0), Inches(0), sw, Inches(0.18),
               fill=SLIDE_PRIMARY, shape=MSO_SHAPE.RECTANGLE)
 
-    _add_textbox(slide, Inches(0.8), Inches(0.4), Inches(12), Inches(0.4),
+    _add_textbox(slide, Inches(0.8), Inches(0.3), Inches(12), Inches(0.35),
                  f'CHALLENGE #{challenge_n}  ·  THE SCENARIO',
                  font_size=11, bold=True, color=SLIDE_PRIMARY)
-    _add_textbox(slide, Inches(0.8), Inches(0.85), Inches(12), Inches(0.7),
-                 'Here\'s what\'s happening', font_size=28, bold=True,
+    _add_textbox(slide, Inches(0.8), Inches(0.7), Inches(12), Inches(0.6),
+                 'Here\'s what\'s happening', font_size=24, bold=True,
                  color=SLIDE_INK)
-    _add_rect(slide, Inches(0.8), Inches(1.65), Inches(0.6), Inches(0.06),
+    _add_rect(slide, Inches(0.8), Inches(1.35), Inches(0.6), Inches(0.06),
               fill=ACCENT_GOLD, shape=MSO_SHAPE.RECTANGLE)
 
-    # Scenario block — image on left, scenario text on right
-    img_added = _add_image_box(slide, Inches(0.8), Inches(2.0), Inches(4.5),
-                               Inches(2.6), f'{project.topic} india',
+    # Scenario block — image on left, scenario text on right (compressed)
+    img_added = _add_image_box(slide, Inches(0.8), Inches(1.65), Inches(4.5),
+                               Inches(2.1), f'{project.topic} india',
                                fallback_color=SLIDE_DEEP, variant=21 + challenge_n)
     sc_x = Inches(5.5) if img_added else Inches(0.8)
     sc_w = Inches(7.2) if img_added else Inches(11.7)
 
-    scen_card = _add_rect(slide, sc_x, Inches(2.0), sc_w, Inches(2.6),
+    scen_card = _add_rect(slide, sc_x, Inches(1.65), sc_w, Inches(2.1),
                           fill=PRGBColor(0xF1, 0xF5, 0xF9),
                           shape=MSO_SHAPE.ROUNDED_RECTANGLE)
     tf = scen_card.text_frame
-    tf.margin_left = Inches(0.4)
-    tf.margin_right = Inches(0.4)
-    tf.margin_top = Inches(0.3)
+    tf.margin_left = Inches(0.3)
+    tf.margin_right = Inches(0.3)
+    tf.margin_top = Inches(0.2)
+    tf.margin_bottom = Inches(0.2)
     tf.word_wrap = True
+    try:
+        from pptx.enum.text import MSO_AUTO_SIZE
+        tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_SHAPE
+    except Exception:
+        pass
     _render_inline_pptx(tf.paragraphs[0], f'"{scenario}"',
-                        font_size=15, color=SLIDE_INK, italic=True)
+                        font_size=13, color=SLIDE_INK, italic=True)
 
     # Tasks header
-    _add_textbox(slide, Inches(0.8), Inches(4.85), Inches(12), Inches(0.4),
+    _add_textbox(slide, Inches(0.8), Inches(3.95), Inches(12), Inches(0.35),
                  'YOUR TASKS', font_size=11, bold=True, color=SLIDE_PRIMARY)
-    _add_textbox(slide, Inches(0.8), Inches(5.2), Inches(12), Inches(0.5),
+    _add_textbox(slide, Inches(0.8), Inches(4.3), Inches(12), Inches(0.4),
                  'Three to deliver  ·  one bonus to push further',
-                 font_size=14, color=SLIDE_MUTED)
+                 font_size=13, color=SLIDE_MUTED)
 
-    # 4-task grid (3 regular + 1 LEVEL UP)
-    task_y = Inches(5.85)
-    task_h = Inches(1.45)
+    # 4-task grid (3 regular + 1 LEVEL UP) — taller cards
+    task_y = Inches(4.85)
+    task_h = Inches(2.45)
     task_w = (sw - Inches(1.6) - Inches(0.3) * 3) / 4
     task_x = Inches(0.8)
     palette = [ACTIVITY_THEMES[0]['main'], ACTIVITY_THEMES[1]['main'],
@@ -347,7 +353,7 @@ def build_challenge_card_pptx(project: Project, week: Week, content: dict) -> io
                          fill=WHITE, line=col, line_width_pt=2,
                          shape=MSO_SHAPE.ROUNDED_RECTANGLE)
         # Number/badge top-left
-        badge = _add_rect(slide, task_x + Inches(0.2), task_y + Inches(0.15),
+        badge = _add_rect(slide, task_x + Inches(0.2), task_y + Inches(0.18),
                           Inches(0.5), Inches(0.5),
                           fill=col, shape=MSO_SHAPE.OVAL)
         tf = badge.text_frame
@@ -361,17 +367,33 @@ def build_challenge_card_pptx(project: Project, week: Week, content: dict) -> io
         r.font.color.rgb = WHITE
         # Bonus label
         if is_bonus:
-            _add_textbox(slide, task_x + Inches(0.85), task_y + Inches(0.18),
+            _add_textbox(slide, task_x + Inches(0.85), task_y + Inches(0.22),
                          task_w - Inches(1.0), Inches(0.4),
                          'LEVEL UP', font_size=10, bold=True, color=col)
-        # Task text
+        # Task text — bigger box, smaller font, auto-shrink if overflow
+        raw_task = tasks[i] if i < len(tasks) else '—'
+        # Hard cap: trim absurdly long tasks at word boundary
+        if len(raw_task) > 220:
+            words = raw_task.split()
+            trimmed, total = [], 0
+            for w in words:
+                if total + len(w) + 1 > 215:
+                    break
+                trimmed.append(w)
+                total += len(w) + 1
+            raw_task = ' '.join(trimmed).rstrip(',.;:') + '...'
         text_box = _add_textbox(
-            slide, task_x + Inches(0.2), task_y + Inches(0.78),
-            task_w - Inches(0.4), task_h - Inches(0.85),
-            tasks[i] if i < len(tasks) else '—',
-            font_size=12, color=SLIDE_INK, parse_md=True,
+            slide, task_x + Inches(0.2), task_y + Inches(0.82),
+            task_w - Inches(0.4), task_h - Inches(0.95),
+            raw_task,
+            font_size=11, color=SLIDE_INK, parse_md=True,
         )
         text_box.text_frame.word_wrap = True
+        try:
+            from pptx.enum.text import MSO_AUTO_SIZE
+            text_box.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_SHAPE
+        except Exception:
+            pass
         task_x += task_w + Inches(0.3)
 
     # ─────────────────────────────────────────────────────────────────────

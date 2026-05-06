@@ -57,7 +57,7 @@ CHALLENGE_CARD_SCHEMA = """{
   "big_questions":        ["EXACTLY 3 questions. Each MAX 15 words. Short, punchy, kid-voice. End with '?'"],
   "connect_job_interest": ["1 line about a real job/professional, MAX 12 words", "1 line about a student interest, MAX 12 words"],
   "scenario":             "MAX 50 words total. 3-4 short sentences. Present tense. Concrete Indian setting. NO long context dump.",
-  "tasks":                ["Task 1: MAX 25 words, 1-2 sentences", "Task 2: MAX 25 words", "Task 3: MAX 25 words", "BONUS Level Up: MAX 30 words, 1-2 sentences, harder twist on Task 3 (HOTS)"],
+  "tasks":                ["Task 1: MAX 18 words, 1 sentence, observable action", "Task 2: MAX 18 words", "Task 3: MAX 18 words", "BONUS Level Up: MAX 22 words, 1 sentence, harder twist on Task 3 (HOTS)"],
   "guidelines":           ["EXACTLY 4-5 guidelines. Each MAX 14 words, ONE LINE only. Action-style: 'Look for...', 'Notice...', 'Compare...'."],
   "words_of_week":        ["Single word. NO phrases.", "Single word.", "Single word."],
   "think_about":          ["Personal-connection prompt — MAX 20 words", "Identity/influence prompt — MAX 20 words", "Systemic/societal prompt — MAX 20 words"],
@@ -98,8 +98,8 @@ KAUSHAL BODH REFLECTION QUESTIONS:
 STRICT WORD-LIMIT RULES (the card has limited space — overflow = broken card):
 - Big questions: MAX 15 words each, 3 total
 - Scenario: MAX 50 words total
-- Tasks 1-3: MAX 25 words each
-- Level Up: MAX 30 words
+- Tasks 1-3: MAX 18 words each (one short sentence, no semicolons or "and then")
+- Level Up: MAX 22 words (one sentence)
 - Guidelines: 4-5 single-line bullets, MAX 14 words each
 - Words of the week: ONE word each (no phrases like "data privacy" — pick "privacy")
 - Think About: MAX 20 words each

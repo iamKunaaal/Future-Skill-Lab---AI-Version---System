@@ -184,10 +184,76 @@ class WeeklyMaterials(models.Model):
 
     @property
     def all_files_ready(self):
-        return all([
-            self.challenge_card_file, self.lesson_plan_file,
-            self.session1_ppt_file,   self.session2_ppt_file,
-        ])
+        from django.conf import settings
+        enabled = getattr(settings, 'MATERIALS_COMPONENTS',
+                          ['challenge_card', 'lesson_plan',
+                           'session1_ppt', 'session2_ppt'])
+        checks = []
+        if 'challenge_card' in enabled: checks.append(self.challenge_card_file)
+        if 'lesson_plan'    in enabled: checks.append(self.lesson_plan_file)
+        if 'session1_ppt'   in enabled: checks.append(self.session1_ppt_file)
+        if 'session2_ppt'   in enabled: checks.append(self.session2_ppt_file)
+        return bool(checks) and all(checks)
+
+    @property
+    def progress(self):
+        """Return current generation stage as a dict for the UI.
+        Skipped components (per MATERIALS_COMPONENTS env) are marked ✓ done."""
+        from django.conf import settings
+        enabled = getattr(settings, 'MATERIALS_COMPONENTS',
+                          ['challenge_card', 'lesson_plan',
+                           'session1_ppt', 'session2_ppt'])
+        cc_en = 'challenge_card' in enabled
+        lp_en = 'lesson_plan'    in enabled
+        s1_en = 'session1_ppt'   in enabled
+        s2_en = 'session2_ppt'   in enabled
+
+        # If a stage is disabled, treat it as already done so the UI advances.
+        cc = (not cc_en) or bool(self.challenge_card_content)
+        lp = (not lp_en) or bool(self.lesson_plan_content)
+        s1 = (not s1_en) or bool(self.session1_ppt_content)
+        s2 = (not s2_en) or bool(self.session2_ppt_content)
+        files_done = self.all_files_ready
+
+        if self.status == self.STATUS_READY:
+            return {'step': 5, 'total': 5, 'percent': 100,
+                    'label': 'Done', 'detail': 'All files ready',
+                    'cc': cc, 'lp': lp, 's1': s1, 's2': s2, 'files': True}
+
+        if not cc:
+            step, pct = 1, 5
+            label, detail = 'Step 1/5 · Challenge Card', 'Generating Challenge Card content...'
+        elif not lp:
+            step, pct = 2, 25
+            label, detail = 'Step 2/5 · Lesson Plan', 'Generating Lesson Plan (largest call, ~10K tokens)...'
+        elif not s1:
+            step, pct = 3, 50
+            label, detail = 'Step 3/5 · BP-1 PPT', 'Generating Session 1 PPT content...'
+        elif not s2:
+            step, pct = 4, 70
+            label, detail = 'Step 4/5 · BP-2 PPT', 'Generating Session 2 PPT content...'
+        elif not files_done:
+            step, pct = 5, 90
+            label, detail = 'Step 5/5 · Building files', 'Rendering files...'
+        else:
+            step, pct = 5, 99
+            label, detail = 'Step 5/5 · Finalising', 'Saving files...'
+
+        # Suffix completed-substeps summary
+        done_bits = []
+        if cc: done_bits.append('CC')
+        if lp: done_bits.append('LP')
+        if s1: done_bits.append('S1')
+        if s2: done_bits.append('S2')
+        if files_done: done_bits.append('Files')
+        completed = ' + '.join(done_bits) if done_bits else 'nothing yet'
+
+        return {
+            'step': step, 'total': 5, 'percent': pct,
+            'label': label, 'detail': detail,
+            'completed': completed,
+            'cc': cc, 'lp': lp, 's1': s1, 's2': s2, 'files': files_done,
+        }
 
 
 class SessionVersion(models.Model):

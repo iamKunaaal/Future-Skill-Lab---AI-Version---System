@@ -23,7 +23,13 @@
     <p class="text-xs font-bold uppercase tracking-widest text-primary mb-1">Phase 2 — Teaching Materials</p>
     <h1 class="text-3xl font-extrabold text-on-surface mb-2">{{ project.topic }}</h1>
     <p class="text-sm text-on-surface-variant">
-      4 files per week × 9 weeks = 36 AI-generated files. Generate week-by-week or all at once.
+      {% with n_components=cc_enabled|yesno:"1,0"|add:lp_enabled|yesno:"1,0"|add:s1_enabled|yesno:"1,0"|add:s2_enabled|yesno:"1,0" %}
+      Generate teaching materials per week. Enabled here:
+      {% if cc_enabled %}<span class="font-semibold">Challenge Card</span>{% if lp_enabled or s1_enabled or s2_enabled %}, {% endif %}{% endif %}
+      {% if lp_enabled %}<span class="font-semibold">Lesson Plan</span>{% if s1_enabled or s2_enabled %}, {% endif %}{% endif %}
+      {% if s1_enabled %}<span class="font-semibold">BP-1 PPT</span>{% if s2_enabled %}, {% endif %}{% endif %}
+      {% if s2_enabled %}<span class="font-semibold">BP-2 PPT</span>{% endif %}.
+      {% endwith %}
     </p>
   </div>
   <div class="flex gap-2 shrink-0">
@@ -80,12 +86,14 @@
               <span class="text-slate-400">{{ row.tokens }} tokens · {{ row.generated_at|date:"d M Y, H:i" }}</span>
             {% elif row.is_generating %}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">
-                <span class="material-symbols-outlined text-[12px] spin-slow">progress_activity</span>Generating...
+                <span class="material-symbols-outlined text-[12px] spin-slow">progress_activity</span>{{ row.progress.label|default:"Generating..." }}
               </span>
+              {% if row.progress.detail %}<span class="text-amber-700/80 truncate">{{ row.progress.detail }}</span>{% endif %}
             {% elif row.is_error %}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold">
                 <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error
               </span>
+              {% if row.progress %}<span class="text-slate-500">Reached: <b>{{ row.progress.label }}</b></span>{% endif %}
               <span class="text-red-500 truncate">{{ row.error_message|truncatechars:100 }}</span>
             {% else %}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-bold">
@@ -93,28 +101,73 @@
               </span>
             {% endif %}
           </div>
+
+          {# Step-by-step checklist — visible during generating and on error #}
+          {% if row.is_generating or row.is_error %}
+            <div class="mt-2 progress-block" data-progress-block>
+              {# Progress bar #}
+              <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1.5">
+                <div class="h-full {% if row.is_error %}bg-red-400{% else %}bg-amber-500{% endif %} transition-all"
+                     style="width: {{ row.progress.percent|default:0 }}%" data-progress-bar></div>
+              </div>
+              {# Step pills #}
+              <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold" data-progress-steps>
+                {% if cc_enabled %}
+                <span class="px-1.5 py-0.5 rounded {% if row.progress.cc %}bg-teal-100 text-teal-700{% elif row.progress.step == 1 and row.is_generating %}bg-amber-100 text-amber-700 animate-pulse{% else %}bg-slate-100 text-slate-400{% endif %}">
+                  {% if row.progress.cc %}✓{% else %}1{% endif %} CC
+                </span>
+                {% endif %}
+                {% if lp_enabled %}
+                <span class="px-1.5 py-0.5 rounded {% if row.progress.lp %}bg-teal-100 text-teal-700{% elif row.progress.step == 2 and row.is_generating %}bg-amber-100 text-amber-700 animate-pulse{% else %}bg-slate-100 text-slate-400{% endif %}">
+                  {% if row.progress.lp %}✓{% else %}2{% endif %} LP
+                </span>
+                {% endif %}
+                {% if s1_enabled %}
+                <span class="px-1.5 py-0.5 rounded {% if row.progress.s1 %}bg-teal-100 text-teal-700{% elif row.progress.step == 3 and row.is_generating %}bg-amber-100 text-amber-700 animate-pulse{% else %}bg-slate-100 text-slate-400{% endif %}">
+                  {% if row.progress.s1 %}✓{% else %}3{% endif %} BP-1
+                </span>
+                {% endif %}
+                {% if s2_enabled %}
+                <span class="px-1.5 py-0.5 rounded {% if row.progress.s2 %}bg-teal-100 text-teal-700{% elif row.progress.step == 4 and row.is_generating %}bg-amber-100 text-amber-700 animate-pulse{% else %}bg-slate-100 text-slate-400{% endif %}">
+                  {% if row.progress.s2 %}✓{% else %}4{% endif %} BP-2
+                </span>
+                {% endif %}
+                <span class="px-1.5 py-0.5 rounded {% if row.progress.files %}bg-teal-100 text-teal-700{% elif row.progress.step == 5 and row.is_generating %}bg-amber-100 text-amber-700 animate-pulse{% else %}bg-slate-100 text-slate-400{% endif %}">
+                  {% if row.progress.files %}✓{% else %}5{% endif %} Files
+                </span>
+              </div>
+            </div>
+          {% endif %}
         </div>
       </div>
 
       {# Right: actions #}
       <div class="flex flex-wrap items-center gap-2 shrink-0" data-week-actions>
         {% if row.is_ready %}
+          {% if cc_enabled %}
           <a href="{% url 'materials_download_cc' project.pk row.week.number %}"
              class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[14px]">slideshow</span>Challenge Card
           </a>
+          {% endif %}
+          {% if lp_enabled %}
           <a href="{% url 'materials_download_lp' project.pk row.week.number %}"
              class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[14px]">description</span>Lesson Plan
           </a>
+          {% endif %}
+          {% if s1_enabled %}
           <a href="{% url 'materials_download_ppt' project.pk row.week.number 1 %}"
              class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[14px]">co_present</span>BP-1 PPT
           </a>
+          {% endif %}
+          {% if s2_enabled %}
           <a href="{% url 'materials_download_ppt' project.pk row.week.number 2 %}"
              class="px-3 py-2 text-xs font-semibold text-primary bg-primary/5 hover:bg-primary/10 rounded-lg flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[14px]">co_present</span>BP-2 PPT
           </a>
+          {% endif %}
           <a href="{% url 'materials_download_zip' project.pk row.week.number %}"
              class="px-3 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[14px]">folder_zip</span>All (.zip)
@@ -138,22 +191,30 @@
                 <span class="material-symbols-outlined text-[16px]">refresh</span>All 4 files (full regen)
               </button>
               <div class="border-t border-slate-100 my-1"></div>
+              {% if cc_enabled %}
               <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="challenge_card"
                 class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
                 <span class="material-symbols-outlined text-[16px]">slideshow</span>Challenge Card only
               </button>
+              {% endif %}
+              {% if lp_enabled %}
               <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="lesson_plan"
                 class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
                 <span class="material-symbols-outlined text-[16px]">description</span>Lesson Plan only
               </button>
+              {% endif %}
+              {% if s1_enabled %}
               <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="session1_ppt"
                 class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
                 <span class="material-symbols-outlined text-[16px]">co_present</span>BP-1 PPT only
               </button>
+              {% endif %}
+              {% if s2_enabled %}
               <button type="button" data-action-regen-part data-week="{{ row.week.number }}" data-component="session2_ppt"
                 class="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-slate-50 text-slate-700">
                 <span class="material-symbols-outlined text-[16px]">co_present</span>BP-2 PPT only
               </button>
+              {% endif %}
             </div>
           </div>
         {% elif row.is_generating %}
@@ -211,9 +272,70 @@
           AI is working...
         </span>`;
     }
+    // Insert empty progress block if not present (will be filled by polling)
+    ensureProgressBlock(row);
     // Bump live counters
     const genStat = document.getElementById('stat-generating');
     if (genStat) genStat.textContent = (parseInt(genStat.textContent || '0', 10) + 1);
+  }
+
+  function ensureProgressBlock(row) {
+    if (row.querySelector('[data-progress-block]')) return;
+    const container = row.querySelector('.min-w-0');
+    if (!container) return;
+    const block = document.createElement('div');
+    block.className = 'mt-2 progress-block';
+    block.setAttribute('data-progress-block', '');
+    block.innerHTML = `
+      <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1.5">
+        <div class="h-full bg-amber-500 transition-all" style="width: 5%" data-progress-bar></div>
+      </div>
+      <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold" data-progress-steps>
+        <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 animate-pulse" data-step="1">1 CC</span>
+        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="2">2 LP</span>
+        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="3">3 BP-1</span>
+        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="4">4 BP-2</span>
+        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="5">5 Files</span>
+      </div>`;
+    container.appendChild(block);
+  }
+
+  function updateProgress(weekNum, progress, isError) {
+    const row = document.querySelector('.week-row[data-week="' + weekNum + '"]');
+    if (!row || !progress) return;
+    ensureProgressBlock(row);
+    const bar = row.querySelector('[data-progress-bar]');
+    if (bar) {
+      bar.style.width = (progress.percent || 0) + '%';
+      bar.className = 'h-full transition-all ' + (isError ? 'bg-red-400' : 'bg-amber-500');
+    }
+    const stepsEl = row.querySelector('[data-progress-steps]');
+    if (stepsEl) {
+      const flags = { 1: progress.cc, 2: progress.lp, 3: progress.s1, 4: progress.s2, 5: progress.files };
+      const labels = { 1: 'CC', 2: 'LP', 3: 'BP-1', 4: 'BP-2', 5: 'Files' };
+      stepsEl.querySelectorAll('[data-step]').forEach(el => {
+        const n = parseInt(el.dataset.step, 10);
+        const done = flags[n];
+        const active = (progress.step === n) && !isError;
+        let cls = 'px-1.5 py-0.5 rounded ';
+        if (done) cls += 'bg-teal-100 text-teal-700';
+        else if (active) cls += 'bg-amber-100 text-amber-700 animate-pulse';
+        else cls += 'bg-slate-100 text-slate-400';
+        el.className = cls;
+        el.textContent = (done ? '✓' : n) + ' ' + labels[n];
+      });
+    }
+    // Update status detail line during generating
+    if (!isError) {
+      const status = row.querySelector('[data-week-status]');
+      if (status && progress.label) {
+        status.innerHTML = `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">
+            <span class="material-symbols-outlined text-[12px] spin-slow">progress_activity</span>${progress.label}
+          </span>
+          <span class="text-amber-700/80 truncate">${progress.detail || ''}</span>`;
+      }
+    }
   }
 
   function setRowError(weekNum, message) {
@@ -389,6 +511,10 @@
       data.rows.forEach(row => {
         if (row.status === 'generating') { anyGenerating = true; generating += 1; }
         if (row.status === 'ready') ready += 1;
+        // Live progress update for each row
+        if (row.progress && (row.status === 'generating' || row.status === 'error')) {
+          updateProgress(row.week_number, row.progress, row.status === 'error');
+        }
       });
       document.getElementById('stat-ready').textContent = ready + '/{{ total_weeks }}';
       document.getElementById('stat-generating').textContent = generating;

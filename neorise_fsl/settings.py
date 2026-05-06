@@ -99,6 +99,14 @@ APIYI_IMAGE_MODEL  = env('APIYI_IMAGE_MODEL',  default='dall-e-3')
 # APIYI_IMAGE_MODEL only. Example: 'dall-e-3,dall-e-2,gpt-image-1'
 APIYI_IMAGE_MODELS = env('APIYI_IMAGE_MODELS', default='')
 
+# Phase 2 — which materials components are enabled in this deployment.
+# Comma-separated list. Valid values: challenge_card,lesson_plan,session1_ppt,session2_ppt
+# Local dev (full): MATERIALS_COMPONENTS=challenge_card,lesson_plan,session1_ppt,session2_ppt
+# Client (LP only): MATERIALS_COMPONENTS=lesson_plan
+_raw_components = env('MATERIALS_COMPONENTS',
+    default='challenge_card,lesson_plan,session1_ppt,session2_ppt')
+MATERIALS_COMPONENTS = [c.strip() for c in _raw_components.split(',') if c.strip()]
+
 # Celery
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL

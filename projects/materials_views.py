@@ -40,10 +40,14 @@ def materials_overview(request, pk):
             'tokens': wm.ai_tokens_used if wm else 0,
             'generated_at': wm.generated_at if wm else None,
             'error_message': wm.error_message if wm else '',
+            'progress': wm.progress if wm else None,
         })
 
     ready_count      = sum(1 for r in rows if r['is_ready'])
     generating_count = sum(1 for r in rows if r['is_generating'])
+
+    enabled = getattr(settings, 'MATERIALS_COMPONENTS',
+        ['challenge_card', 'lesson_plan', 'session1_ppt', 'session2_ppt'])
 
     return render(request, 'projects/materials.html', {
         'project': project,
@@ -52,6 +56,10 @@ def materials_overview(request, pk):
         'generating_count': generating_count,
         'total_weeks': weeks.count(),
         'phase1_complete': project.phase1_complete,
+        'cc_enabled': 'challenge_card' in enabled,
+        'lp_enabled': 'lesson_plan'    in enabled,
+        's1_enabled': 'session1_ppt'   in enabled,
+        's2_enabled': 'session2_ppt'   in enabled,
     })
 
 
@@ -94,6 +102,10 @@ def regenerate_component(request, pk, week, component):
     valid = {'challenge_card', 'lesson_plan', 'session1_ppt', 'session2_ppt'}
     if component not in valid:
         return JsonResponse({'error': 'invalid_component'}, status=400)
+
+    enabled = getattr(settings, 'MATERIALS_COMPONENTS', list(valid))
+    if component not in enabled:
+        return JsonResponse({'error': 'component_disabled_in_this_deployment'}, status=403)
 
     week_num = int(week)
     wm, _ = WeeklyMaterials.objects.get_or_create(
@@ -161,6 +173,7 @@ def materials_status_json(request, pk):
             'tokens':        wm.ai_tokens_used,
             'error_message': wm.error_message,
             'generated_at':  wm.generated_at.strftime('%d %b %Y, %H:%M') if wm.generated_at else None,
+            'progress':      wm.progress,
         })
     return JsonResponse({'rows': rows})
 
