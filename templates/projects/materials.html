@@ -250,6 +250,8 @@
   const REBUILD_BASE = "{% url 'materials_rebuild_week' project.pk 0 %}";
   const REGEN_PART   = "{% url 'materials_regen_component' project.pk 0 'challenge_card' %}";
   const GEN_ALL      = "{% url 'materials_generate_all' project.pk %}";
+  // Number of AI calls per full week generation — based on enabled components
+  const ENABLED_CALLS = {{ cc_enabled|yesno:"1,0"|add:lp_enabled|yesno:"1,0"|add:s1_enabled|yesno:"1,0"|add:s2_enabled|yesno:"1,0" }};
 
   // Optimistically swap the clicked row's UI into a "Generating..." state
   // so the user gets immediate feedback. The polling loop will reload the
@@ -279,6 +281,15 @@
     if (genStat) genStat.textContent = (parseInt(genStat.textContent || '0', 10) + 1);
   }
 
+  const ENABLED_PILLS = {
+    1: {{ cc_enabled|yesno:"true,false" }},
+    2: {{ lp_enabled|yesno:"true,false" }},
+    3: {{ s1_enabled|yesno:"true,false" }},
+    4: {{ s2_enabled|yesno:"true,false" }},
+    5: true,  // Files step always shown
+  };
+  const PILL_LABELS = {1: 'CC', 2: 'LP', 3: 'BP-1', 4: 'BP-2', 5: 'Files'};
+
   function ensureProgressBlock(row) {
     if (row.querySelector('[data-progress-block]')) return;
     const container = row.querySelector('.min-w-0');
@@ -286,17 +297,18 @@
     const block = document.createElement('div');
     block.className = 'mt-2 progress-block';
     block.setAttribute('data-progress-block', '');
+    let pillsHtml = '';
+    for (let i = 1; i <= 5; i++) {
+      if (!ENABLED_PILLS[i]) continue;
+      const isFirst = pillsHtml === '';
+      const cls = isFirst ? 'bg-amber-100 text-amber-700 animate-pulse' : 'bg-slate-100 text-slate-400';
+      pillsHtml += `<span class="px-1.5 py-0.5 rounded ${cls}" data-step="${i}">${i} ${PILL_LABELS[i]}</span>`;
+    }
     block.innerHTML = `
       <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1.5">
         <div class="h-full bg-amber-500 transition-all" style="width: 5%" data-progress-bar></div>
       </div>
-      <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold" data-progress-steps>
-        <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 animate-pulse" data-step="1">1 CC</span>
-        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="2">2 LP</span>
-        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="3">3 BP-1</span>
-        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="4">4 BP-2</span>
-        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400" data-step="5">5 Files</span>
-      </div>`;
+      <div class="flex flex-wrap gap-1.5 text-[10px] font-semibold" data-progress-steps>${pillsHtml}</div>`;
     container.appendChild(block);
   }
 
@@ -395,7 +407,9 @@
 
   document.querySelectorAll('[data-action-regen]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!confirm('Regenerate AI content for Week ' + btn.dataset.week + '? Uses 4 fresh AI calls.')) return;
+      const n = ENABLED_CALLS;
+      const callWord = n === 1 ? 'AI call' : 'fresh AI calls';
+      if (!confirm('Generate materials for Week ' + btn.dataset.week + '? Uses ' + n + ' ' + callWord + '.')) return;
       triggerWeek(btn.dataset.week);
     });
   });
@@ -486,7 +500,8 @@
   const allBtn = document.getElementById('btn-generate-all');
   if (allBtn) {
     allBtn.addEventListener('click', async () => {
-      if (!confirm('Generate materials for ALL 9 weeks? This will make ~36 AI calls.')) return;
+      const totalCalls = ENABLED_CALLS * 9;
+      if (!confirm('Generate materials for ALL 9 weeks? This will make ~' + totalCalls + ' AI calls.')) return;
       const fd = new FormData();
       fd.append('csrfmiddlewaretoken', CSRF);
       const r = await fetch(GEN_ALL, { method: 'POST', body: fd });
