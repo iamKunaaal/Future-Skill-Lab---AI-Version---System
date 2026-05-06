@@ -48,6 +48,10 @@ def materials_overview(request, pk):
 
     enabled = getattr(settings, 'MATERIALS_COMPONENTS',
         ['challenge_card', 'lesson_plan', 'session1_ppt', 'session2_ppt'])
+    cc_en = 'challenge_card' in enabled
+    lp_en = 'lesson_plan'    in enabled
+    s1_en = 'session1_ppt'   in enabled
+    s2_en = 'session2_ppt'   in enabled
 
     return render(request, 'projects/materials.html', {
         'project': project,
@@ -56,10 +60,11 @@ def materials_overview(request, pk):
         'generating_count': generating_count,
         'total_weeks': weeks.count(),
         'phase1_complete': project.phase1_complete,
-        'cc_enabled': 'challenge_card' in enabled,
-        'lp_enabled': 'lesson_plan'    in enabled,
-        's1_enabled': 'session1_ppt'   in enabled,
-        's2_enabled': 'session2_ppt'   in enabled,
+        'cc_enabled': cc_en,
+        'lp_enabled': lp_en,
+        's1_enabled': s1_en,
+        's2_enabled': s2_en,
+        'enabled_count': sum([cc_en, lp_en, s1_en, s2_en]),
     })
 
 

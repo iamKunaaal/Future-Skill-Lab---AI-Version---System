@@ -251,7 +251,7 @@
   const REGEN_PART   = "{% url 'materials_regen_component' project.pk 0 'challenge_card' %}";
   const GEN_ALL      = "{% url 'materials_generate_all' project.pk %}";
   // Number of AI calls per full week generation — based on enabled components
-  const ENABLED_CALLS = {{ cc_enabled|yesno:"1,0"|add:lp_enabled|yesno:"1,0"|add:s1_enabled|yesno:"1,0"|add:s2_enabled|yesno:"1,0" }};
+  const ENABLED_CALLS = {{ enabled_count }};
 
   // Optimistically swap the clicked row's UI into a "Generating..." state
   // so the user gets immediate feedback. The polling loop will reload the
