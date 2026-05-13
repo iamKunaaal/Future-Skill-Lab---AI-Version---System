@@ -680,6 +680,19 @@ def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.By
         h2.paragraph_format.space_after = Pt(8)
         add_styled_run(h2, session.name, bold=True, size=18, color=INK)
 
+        # If this session's AI call failed, surface a clear placeholder
+        # rather than rendering an empty section that looks broken.
+        if not s_content:
+            warn = doc.add_paragraph()
+            warn.paragraph_format.space_before = Pt(12)
+            add_styled_run(
+                warn,
+                'Content generation for this block period failed. '
+                'Click "Regenerate AI → Lesson Plan only" to retry.',
+                italic=True, size=11, color=MUTED,
+            )
+            continue
+
         # Objectives
         objectives = s_content.get('objectives', [])
         if objectives:

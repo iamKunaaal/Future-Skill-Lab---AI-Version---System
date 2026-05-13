@@ -22,60 +22,100 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
                                    sessions_data, kb_questions, project_id,
                                    week_number):
     """Run LP as 1 overview call + N session calls in parallel.
-    ~3x faster than the monolithic 1-call version."""
+    ~3x faster than the monolithic 1-call version.
+
+    Each sub-call gets one in-band retry on exception so a single network
+    blip doesn't drop a whole BP from the lesson plan.
+    """
     from .materials_prompts import build_lp_overview_prompt, build_lp_session_prompt
 
-    jobs = []  # (label, callable returning (label, dict, tokens))
+    n_sessions = min(len(sessions_data), 2)
 
     def _overview_job():
         sys_p, user_p = build_lp_overview_prompt(
             project, week, weekly_brief, competencies, kb_questions)
-        d, tok = _call_with_json_retry(
-            user_p, system_prompt=sys_p, max_tokens=3500,
-            project_id=project_id, label=f'W{week_number} · LP Overview')
-        return ('overview', d, tok)
+        try:
+            d, tok = _call_with_json_retry(
+                user_p, system_prompt=sys_p, max_tokens=3500,
+                project_id=project_id, label=f'W{week_number} · LP Overview')
+            return ('overview', d, tok, None)
+        except Exception as e:
+            _log(project_id, 'STREAM',
+                 f'W{week_number} · LP Overview · retry once after: {e}')
+            try:
+                d, tok = _call_with_json_retry(
+                    user_p, system_prompt=sys_p, max_tokens=3500,
+                    project_id=project_id, label=f'W{week_number} · LP Overview retry')
+                return ('overview', d, tok, None)
+            except Exception as e2:
+                return ('overview', {}, 0, e2)
 
     def _session_job(idx, sd):
+        label_base = f'W{week_number} · LP S{sd.get("number", idx + 1)}'
         sys_p, user_p = build_lp_session_prompt(
             project, week, weekly_brief, competencies, sd, kb_questions)
-        d, tok = _call_with_json_retry(
-            user_p, system_prompt=sys_p, max_tokens=3500,
-            project_id=project_id, label=f'W{week_number} · LP S{sd.get("number", idx + 1)}')
-        return (('session', idx), d, tok)
+        try:
+            d, tok = _call_with_json_retry(
+                user_p, system_prompt=sys_p, max_tokens=3500,
+                project_id=project_id, label=label_base)
+            return (('session', idx), d, tok, None)
+        except Exception as e:
+            _log(project_id, 'STREAM',
+                 f'{label_base} · failed once ({e}), retrying...')
+            try:
+                d, tok = _call_with_json_retry(
+                    user_p, system_prompt=sys_p, max_tokens=3500,
+                    project_id=project_id, label=f'{label_base} retry')
+                return (('session', idx), d, tok, None)
+            except Exception as e2:
+                return (('session', idx), {}, 0, e2)
 
-    jobs.append(_overview_job)
-    for idx, sd in enumerate(sessions_data[:2]):
-        jobs.append(lambda i=idx, s=sd: _session_job(i, s))
+    jobs = [_overview_job]
+    for idx in range(n_sessions):
+        jobs.append(lambda i=idx, s=sessions_data[idx]: _session_job(i, s))
 
     overview = {}
-    sessions_out = [{}, {}]
+    sessions_out = [{} for _ in range(n_sessions)]
     total_tokens = 0
-    last_err = None
+    failures = []
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
         futures = [ex.submit(j) for j in jobs]
         for f in as_completed(futures):
             try:
-                key, data, tok = f.result()
-                total_tokens += tok
-                if key == 'overview':
-                    overview = data
-                else:
-                    _, idx = key
-                    if idx < 2:
-                        sessions_out[idx] = data
-            except Exception as e:
-                last_err = e
+                key, data, tok, err = f.result()
+            except Exception as outer:
+                failures.append(('unknown', outer))
+                continue
+            total_tokens += tok
+            if err is not None:
+                failures.append((key, err))
+                continue
+            if key == 'overview':
+                overview = data
+            else:
+                _, idx = key
+                if idx < n_sessions:
+                    sessions_out[idx] = data
 
-    if last_err and not overview:
-        # Overview failure is fatal; sessions can fail-soft
-        raise last_err
+    # Surface failures so they show in logs
+    for key, err in failures:
+        _log(project_id, 'ERROR', f'W{week_number} · LP sub-call {key} FAILED: {err}')
 
+    # If overview failed, we can't build a coherent doc
+    if not overview:
+        raise RuntimeError(
+            f'LP overview call failed. Other failures: {failures}'
+        )
+
+    # IMPORTANT: keep both session slots (even if empty) so the DOCX builder
+    # renders BP-1 and BP-2 sections. An empty session dict produces a
+    # placeholder section rather than being dropped silently.
     merged = {
         'weekly_overview':   overview.get('weekly_overview', ''),
         'knowledge_focus':   overview.get('knowledge_focus', ''),
         'competency_rubric': overview.get('competency_rubric', []),
-        'sessions':          [s for s in sessions_out if s],
+        'sessions':          sessions_out,  # full list, no filtering
     }
     return merged, total_tokens
 
