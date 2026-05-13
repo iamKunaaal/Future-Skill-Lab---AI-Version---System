@@ -81,9 +81,16 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# OpenRouter
-OPENROUTER_API_KEY = env('OPENROUTER_API_KEY')
+# LLM Provider — APIYI (OpenAI-compatible proxy, same one used for images).
+# Provides Claude models without going through OpenRouter.
+# OPENROUTER_* kept as fallback / legacy.
+OPENROUTER_API_KEY = env('OPENROUTER_API_KEY', default='')
 OPENROUTER_MODEL = env('OPENROUTER_MODEL', default='anthropic/claude-sonnet-4-5')
+# When LLM_PROVIDER=apiyi, calls route to APIYI's chat completions endpoint
+# using APIYI_API_KEY + APIYI_LLM_MODEL. Set to 'openrouter' to use the
+# legacy OpenRouter path.
+LLM_PROVIDER   = env('LLM_PROVIDER',   default='apiyi')
+APIYI_LLM_MODEL = env('APIYI_LLM_MODEL', default='claude-sonnet-4-5-20250929')
 
 # Unsplash (free stock photos for Phase 2 PPTs).
 # Sign up at https://unsplash.com/developers — free tier = 50 requests/hour.

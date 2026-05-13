@@ -31,29 +31,44 @@ def _log(project, level, message):
 
 def _call_openrouter(prompt: str, system_prompt: str = '',
                      max_tokens: int = 4096, temperature: float = 0.72) -> tuple[str, int]:
-    """Call OpenRouter API, return (response_text, total_tokens)."""
-    headers = {
-        'Authorization': f'Bearer {settings.OPENROUTER_API_KEY}',
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://neorise-fsl.app',
-        'X-Title': 'Neorise FSL',
-    }
+    """Call the configured LLM provider, return (response_text, total_tokens).
+
+    Routes through APIYI by default (LLM_PROVIDER=apiyi). Falls back to
+    OpenRouter when LLM_PROVIDER=openrouter. Both endpoints use the
+    OpenAI-compatible /chat/completions schema.
+    """
+    provider = (getattr(settings, 'LLM_PROVIDER', 'apiyi') or 'apiyi').lower()
+
+    if provider == 'apiyi':
+        api_key  = settings.APIYI_API_KEY
+        base_url = settings.APIYI_BASE_URL.rstrip('/')
+        url      = f'{base_url}/chat/completions'
+        model    = settings.APIYI_LLM_MODEL
+        headers  = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type':  'application/json',
+        }
+    else:
+        url    = 'https://openrouter.ai/api/v1/chat/completions'
+        model  = settings.OPENROUTER_MODEL
+        headers = {
+            'Authorization': f'Bearer {settings.OPENROUTER_API_KEY}',
+            'Content-Type':  'application/json',
+            'HTTP-Referer':  'https://neorise-fsl.app',
+            'X-Title':       'Neorise FSL',
+        }
+
     messages = []
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': prompt})
     payload = {
-        'model': settings.OPENROUTER_MODEL,
-        'messages': messages,
-        'max_tokens': max_tokens,
+        'model':       model,
+        'messages':    messages,
+        'max_tokens':  max_tokens,
         'temperature': temperature,
     }
-    resp = requests.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        headers=headers,
-        json=payload,
-        timeout=120,
-    )
+    resp = requests.post(url, headers=headers, json=payload, timeout=120)
     resp.raise_for_status()
     data = resp.json()
     text   = data['choices'][0]['message']['content']
