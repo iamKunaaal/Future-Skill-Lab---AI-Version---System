@@ -720,7 +720,7 @@
       terminal.scrollTop = terminal.scrollHeight;
 
       // Detect completion
-      if (log.level === 'SAVE' && log.message.includes('Session ' + regenSessionNum + ' regenerated')) {
+      if (log.level === 'SAVE' && (log.message.includes('BP' + regenSessionNum + ' regenerated') || log.message.includes('Session ' + regenSessionNum + ' regenerated'))) {
         clearInterval(regenPollInterval);
         regenPollInterval = null;
         document.getElementById('regen-loading-section').classList.add('hidden');

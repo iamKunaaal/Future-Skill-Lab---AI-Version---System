@@ -5,6 +5,11 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+try:
+    import json_repair as _json_repair  # lenient JSON fixer for LLM output
+except ImportError:
+    _json_repair = None
+
 from celery import shared_task
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -56,7 +61,7 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
             project, week, weekly_brief, competencies, sd, kb_questions)
         try:
             d, tok = _call_with_json_retry(
-                user_p, system_prompt=sys_p, max_tokens=3500,
+                user_p, system_prompt=sys_p, max_tokens=8000,
                 project_id=project_id, label=label_base)
             return (('session', idx), d, tok, None)
         except Exception as e:
@@ -64,7 +69,7 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
                  f'{label_base} · failed once ({e}), retrying...')
             try:
                 d, tok = _call_with_json_retry(
-                    user_p, system_prompt=sys_p, max_tokens=3500,
+                    user_p, system_prompt=sys_p, max_tokens=8000,
                     project_id=project_id, label=f'{label_base} retry')
                 return (('session', idx), d, tok, None)
             except Exception as e2:
@@ -113,6 +118,7 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
     # placeholder section rather than being dropped silently.
     merged = {
         'weekly_overview':   overview.get('weekly_overview', ''),
+        'week_challenge':    overview.get('week_challenge', {}),
         'knowledge_focus':   overview.get('knowledge_focus', ''),
         'competency_rubric': overview.get('competency_rubric', []),
         'sessions':          sessions_out,  # full list, no filtering
@@ -138,6 +144,30 @@ log = logging.getLogger(__name__)
 
 
 # ── JSON parsing helpers ──────────────────────────────────────────────────
+def _fix_invalid_escapes(s: str) -> str:
+    """Replace backslash-escapes that are illegal in JSON.
+
+    Claude often emits \\' inside strings (e.g. 'won\\'t', 'student\\'s')
+    — JSON spec doesn't allow \\' as an escape, only \\". Same for \\n /
+    \\t inside the middle of a sentence where the model didn't mean a
+    newline. We strip the backslash for illegal escapes; legal ones
+    (\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\uXXXX) are kept.
+    """
+    legal = set('"\\/bfnrtu')
+    out = []
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if ch == '\\' and i + 1 < len(s):
+            nxt = s[i + 1]
+            if nxt in legal:
+                out.append(ch); out.append(nxt); i += 2; continue
+            # Illegal escape — drop the backslash, keep the next char
+            out.append(nxt); i += 2; continue
+        out.append(ch); i += 1
+    return ''.join(out)
+
+
 def _coerce_to_json(blob: str) -> str:
     """Best-effort cleanup of common LLM JSON issues."""
     s = blob
@@ -148,6 +178,8 @@ def _coerce_to_json(blob: str) -> str:
            .replace('‘', "'").replace('’', "'"))
     # Remove control characters that aren't whitespace
     s = ''.join(ch for ch in s if ch >= ' ' or ch in '\n\r\t')
+    # Fix invalid backslash escapes (\\' is the main offender from Claude)
+    s = _fix_invalid_escapes(s)
     return s
 
 
@@ -222,12 +254,30 @@ def _parse_json_response(text: str) -> dict:
     try:
         return json.loads(balanced)
     except json.JSONDecodeError as e:
-        # Last resort — raise with helpful context
-        raise ValueError(
-            f'JSON parse failed after 3 cleanup attempts: {e}. '
-            f'Cleaned blob length={len(balanced)}. '
-            f'Tail (last 200 chars): {balanced[-200:]!r}'
-        )
+        last_err = e
+
+    # Attempt 4 — json_repair (purpose-built for LLM-produced broken JSON)
+    if _json_repair is not None:
+        try:
+            repaired = _json_repair.loads(blob)
+            if isinstance(repaired, dict) and repaired:
+                return repaired
+        except Exception:
+            pass
+        # Try the cleaned version too
+        try:
+            repaired = _json_repair.loads(_coerce_to_json(blob))
+            if isinstance(repaired, dict) and repaired:
+                return repaired
+        except Exception:
+            pass
+
+    # Out of options — raise with helpful context
+    raise ValueError(
+        f'JSON parse failed after 4 cleanup attempts: {last_err}. '
+        f'Cleaned blob length={len(balanced)}. '
+        f'Tail (last 200 chars): {balanced[-200:]!r}'
+    )
 
 
 def _log(project_id: int, level: str, message: str):
@@ -244,9 +294,12 @@ def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
     """Call OpenRouter expecting JSON, with self-healing retry on parse fail.
 
     Returns (parsed_dict, total_tokens). On parse failure, asks the model to
-    return ONLY the corrected JSON. Up to `retries` repair attempts."""
+    return ONLY the corrected JSON. Up to `retries` repair attempts.
+
+    Uses `response_format: json_object` (OpenAI structured JSON mode) so
+    the provider enforces valid JSON, sharply reducing parse failures."""
     text, tok = _call_openrouter(user_prompt, system_prompt=system_prompt,
-                                 max_tokens=max_tokens)
+                                 max_tokens=max_tokens, json_mode=True)
     total_tokens = tok
     last_err = None
 
@@ -278,13 +331,13 @@ def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
             )
             new_text, tok = _call_openrouter(
                 repair_prompt, system_prompt=system_prompt,
-                max_tokens=max_tokens, temperature=0.1,
+                max_tokens=max_tokens, temperature=0.1, json_mode=True,
             )
         elif attempt == 1:
             # Fresh attempt — original prompt at temp 0
             new_text, tok = _call_openrouter(
                 user_prompt, system_prompt=system_prompt,
-                max_tokens=max_tokens, temperature=0.0,
+                max_tokens=max_tokens, temperature=0.0, json_mode=True,
             )
         else:
             # Last resort — emphasise compact JSON, no prose, escape quotes
@@ -300,7 +353,7 @@ def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
             )
             new_text, tok = _call_openrouter(
                 strict_prompt, system_prompt=system_prompt,
-                max_tokens=max_tokens, temperature=0.0,
+                max_tokens=max_tokens, temperature=0.0, json_mode=True,
             )
 
         total_tokens += tok

@@ -30,13 +30,18 @@ def _log(project, level, message):
 
 
 def _call_openrouter(prompt: str, system_prompt: str = '',
-                     max_tokens: int = 4096, temperature: float = 0.72) -> tuple[str, int]:
+                     max_tokens: int = 4096, temperature: float = 0.72,
+                     json_mode: bool = False) -> tuple[str, int]:
     """Call the configured LLM provider, return (response_text, total_tokens).
 
     Routes through APIYI by default (LLM_PROVIDER=apiyi). Falls back to
     OpenRouter when LLM_PROVIDER=openrouter. Both endpoints use the
     OpenAI-compatible /chat/completions schema.
+
+    Retries transient 5xx errors (503/502/504) with exponential backoff
+    so a brief provider outage doesn't kill the whole generation run.
     """
+    import time
     provider = (getattr(settings, 'LLM_PROVIDER', 'apiyi') or 'apiyi').lower()
 
     if provider == 'apiyi':
@@ -68,12 +73,33 @@ def _call_openrouter(prompt: str, system_prompt: str = '',
         'max_tokens':  max_tokens,
         'temperature': temperature,
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    text   = data['choices'][0]['message']['content']
-    tokens = data.get('usage', {}).get('total_tokens', 0)
-    return text, tokens
+    if json_mode:
+        # OpenAI-compatible: force JSON output. APIYI supports this.
+        payload['response_format'] = {'type': 'json_object'}
+    transient_codes = {502, 503, 504, 408, 429}
+    delays = [2, 5, 12]  # backoff schedule — total ~19s before giving up
+    last_exc = None
+    for attempt in range(len(delays) + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=300)
+            if resp.status_code in transient_codes and attempt < len(delays):
+                # transient — back off and retry
+                time.sleep(delays[attempt])
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            text   = data['choices'][0]['message']['content']
+            tokens = data.get('usage', {}).get('total_tokens', 0)
+            return text, tokens
+        except requests.exceptions.RequestException as e:
+            last_exc = e
+            if attempt < len(delays):
+                time.sleep(delays[attempt])
+                continue
+            raise
+
+    # Exhausted retries
+    raise last_exc if last_exc else RuntimeError('LLM call failed after retries')
 
 
 def _get_competencies_for_session(session: Session, project: Project) -> list[str]:
@@ -143,7 +169,8 @@ def _build_system_prompt(project: Project) -> str:
 
 
 def _build_prompt(project: Project, session: Session, custom_instructions: str = '',
-                  include_weekly_brief: bool = False) -> str:
+                  include_weekly_brief: bool = False,
+                  previous_week_brief: str = '') -> str:
     week = session.week
     comp_lines = _get_competencies_for_session(session, project)
     comp_text = '\n'.join(f"- {line}" for line in comp_lines) or "No specific competency assigned for this track."
@@ -163,16 +190,31 @@ def _build_prompt(project: Project, session: Session, custom_instructions: str =
     sessions_in_week = list(Session.objects.filter(week=week).order_by('number'))
     week_sessions_str = ' and '.join(f'BP{s.number} ({s.name})' for s in sessions_in_week)
 
+    # Story continuity context for Week 2+
+    story_continuity = ''
+    if include_weekly_brief and previous_week_brief and week.number > 1:
+        story_continuity = f"""
+STORY CONTINUITY — CRITICAL:
+The project has ONE continuous story/scenario across all 9 weeks. Week 1 introduced
+the base scenario. Each subsequent week MUST continue and build on the SAME story —
+do NOT introduce a new scenario, character, or organisation. Evolve the existing one.
+
+Here is last week's challenge (Week {week.number - 1}) — continue THIS story:
+---
+{previous_week_brief[:800]}
+---
+"""
+
     if include_weekly_brief:
         brief_instruction = f"""
 # SECTION 1 — WEEKLY BRIEF
 Write a comprehensive Weekly Brief for Week {week.number}: {week.phase}.
 This brief covers BOTH sessions of the week: {week_sessions_str}.
-
+{story_continuity}
 It must have exactly these 4 sections in this order:
 
 1. Focus: What students will achieve by end of week (3–5 specific outcomes tied to competencies above)
-2. Challenge: A real-world scenario + the student task framed around "{project.topic}"
+2. Challenge: {"Introduce a compelling base scenario with a named Indian character/organisation and a real-world problem framed around" if week.number == 1 else "Continue the SAME scenario from previous weeks — advance the story, raise the stakes, and give students a new task that builds on what they did last week for"} "{project.topic}"
 3. Student Reflection: Guiding reflection questions for students to think about during the week (3–4 questions connecting the work to their personal experience, future, and the topic)
 4. Success Criteria: 3–4 measurable I-can statements students can self-assess against
 
@@ -194,9 +236,7 @@ Reference example (Human Services / MarTech topic) — match this quality, struc
     return f"""PROJECT CONTEXT:
 - Topic: {project.topic}
 - Grade: {project.grade}
-- Subject Track: {track_name}
-- Tech Competencies selected:
-{chr(10).join(f"  • {c} — {Project.TECH_DESCRIPTIONS.get(c, '')}" for c in project.tech_competency)}{extra_context}
+- Subject Track: {track_name}{extra_context}
 
 FRAMEWORK REFERENCE:
 - Week {week.number} — {week.phase} | Sessions this week: {week_sessions_str}
@@ -247,6 +287,7 @@ def generate_project_task(project_id: int):
     sessions = Session.objects.select_related('week').prefetch_related('competencies').all()
     total_tokens = 0
     system = _build_system_prompt(project)
+    previous_week_brief = ''  # Track story continuity across weeks
 
     for session in sessions:
         try:
@@ -255,6 +296,9 @@ def generate_project_task(project_id: int):
             # Skip already-generated sessions (idempotency)
             if content.ai_description:
                 _log(project, 'SAVE', f'BP{session.number} → already exists · skipping')
+                # Still capture the brief for story continuity
+                if content.weekly_brief:
+                    previous_week_brief = content.weekly_brief
                 continue
 
             is_first = _is_first_bp_of_week(session)
@@ -263,7 +307,8 @@ def generate_project_task(project_id: int):
                  f'Building prompt: BP{session.number} · {session.name} · Week {session.week.number} {session.week.phase}'
                  + (' · [includes Weekly Brief]' if is_first else ''))
 
-            prompt = _build_prompt(project, session, include_weekly_brief=is_first)
+            prompt = _build_prompt(project, session, include_weekly_brief=is_first,
+                                   previous_week_brief=previous_week_brief)
 
             _log(project, 'STREAM',
                  f'← Token stream initiated · {settings.OPENROUTER_MODEL} · temperature=0.72')
@@ -289,6 +334,10 @@ def generate_project_task(project_id: int):
             content.generated_at   = timezone.now()
             content.save(update_fields=['ai_description', 'weekly_brief', 'generated_at', 'updated_at'])
             content.save_original()
+
+            # Update story continuity tracker for next week
+            if weekly_brief:
+                previous_week_brief = weekly_brief
 
             _log(project, 'TOKEN',
                  f'BP{session.number} complete · {tokens} tok · cumulative: {total_tokens:,}')

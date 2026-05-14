@@ -51,12 +51,44 @@ def add_styled_run(paragraph, text, *, bold=False, italic=False,
     return run
 
 
+# ── Hyperlink helper ───────────────────────────────────────────────────────
+def add_hyperlink(paragraph, url, text=None, color=ACCENT_BLUE, size=11):
+    """Add a clickable hyperlink to a paragraph."""
+    part = paragraph.part
+    r_id = part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+    new_run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    c_elem = OxmlElement('w:color')
+    c_elem.set(qn('w:val'), f'{color.red:02X}{color.green:02X}{color.blue:02X}' if hasattr(color, 'red') else '2563EB')
+    rPr.append(c_elem)
+    u_elem = OxmlElement('w:u')
+    u_elem.set(qn('w:val'), 'single')
+    rPr.append(u_elem)
+    sz_elem = OxmlElement('w:sz')
+    sz_elem.set(qn('w:val'), str(size * 2))
+    rPr.append(sz_elem)
+    font_elem = OxmlElement('w:rFonts')
+    font_elem.set(qn('w:ascii'), 'Calibri')
+    font_elem.set(qn('w:hAnsi'), 'Calibri')
+    rPr.append(font_elem)
+    new_run.append(rPr)
+    new_run.text = text or url
+    hyperlink.append(new_run)
+    paragraph._p.append(hyperlink)
+    return hyperlink
+
+
+# ── URL detection pattern ─────────────────────────────────────────────────
+_URL_PATTERN = re.compile(r'(https?://[^\s\)\]>,]+)')
+
 # ── Inline markdown parser (bold + italic + code) ─────────────────────────
 _INLINE_PATTERN = re.compile(r'(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|`[^`\n]+?`)')
 
 
 def render_inline(paragraph, text, *, base_size=11, base_color=INK):
-    """Render bold/italic/code spans within a single line."""
+    """Render bold/italic/code spans and URLs within a single line."""
     if not text:
         return
     parts = _INLINE_PATTERN.split(text)
@@ -64,17 +96,37 @@ def render_inline(paragraph, text, *, base_size=11, base_color=INK):
         if not part:
             continue
         if part.startswith('**') and part.endswith('**'):
-            add_styled_run(paragraph, part[2:-2], bold=True,
-                           size=base_size, color=base_color)
+            _render_with_urls(paragraph, part[2:-2], bold=True,
+                              size=base_size, color=base_color)
         elif part.startswith('*') and part.endswith('*'):
-            add_styled_run(paragraph, part[1:-1], italic=True,
-                           size=base_size, color=base_color)
+            _render_with_urls(paragraph, part[1:-1], italic=True,
+                              size=base_size, color=base_color)
         elif part.startswith('`') and part.endswith('`'):
             add_styled_run(paragraph, part[1:-1],
                            size=base_size - 1, color=PRIMARY,
                            font='Consolas')
         else:
-            add_styled_run(paragraph, part, size=base_size, color=base_color)
+            _render_with_urls(paragraph, part, size=base_size, color=base_color)
+
+
+def _render_with_urls(paragraph, text, *, bold=False, italic=False,
+                      size=11, color=INK):
+    """Render text, converting any URLs into clickable hyperlinks."""
+    url_parts = _URL_PATTERN.split(text)
+    for chunk in url_parts:
+        if not chunk:
+            continue
+        if _URL_PATTERN.fullmatch(chunk):
+            # Clean trailing punctuation from URL
+            url = chunk.rstrip('.,;:!?)')
+            trailing = chunk[len(url):]
+            add_hyperlink(paragraph, url, text=url, size=size)
+            if trailing:
+                add_styled_run(paragraph, trailing, bold=bold, italic=italic,
+                               size=size, color=color)
+        else:
+            add_styled_run(paragraph, chunk, bold=bold, italic=italic,
+                           size=size, color=color)
 
 
 # ── Markdown table helpers ────────────────────────────────────────────────

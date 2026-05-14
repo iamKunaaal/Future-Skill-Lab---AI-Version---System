@@ -390,6 +390,7 @@
 
   async function rebuildWeek(weekNum) {
     setRowGenerating(weekNum, 'Rebuilding files...');
+    showToast('Rebuilding Week ' + weekNum + '...', 'info');
     const url = REBUILD_BASE.replace(/\/0\/$/, '/' + weekNum + '/');
     const fd = new FormData();
     fd.append('csrfmiddlewaretoken', CSRF);
@@ -398,15 +399,46 @@
       if (!r.ok) {
         const txt = await r.text();
         setRowError(weekNum, 'Rebuild failed');
-        alert('Rebuild failed: ' + txt.slice(0, 200));
+        showToast('Rebuild failed: ' + txt.slice(0, 100), 'error');
         return;
       }
     } catch (e) {
       setRowError(weekNum, 'Network error');
+      showToast('Network error during rebuild', 'error');
       return;
     }
-    pollStatus();
-    if (!pollHandle) startPolling();
+    // Wait briefly so the toast is visible before the page reloads.
+    showToast('Week ' + weekNum + ' rebuilt — refreshing...', 'success');
+    setTimeout(() => { location.reload(); }, 1400);
+  }
+
+  // ── Toast notification ────────────────────────────────────────────
+  function showToast(message, kind) {
+    // Remove any prior toast so we don't stack them
+    document.querySelectorAll('[data-toast]').forEach(el => el.remove());
+    const colors = {
+      info:    'bg-amber-500',
+      success: 'bg-teal-600',
+      error:   'bg-red-600',
+    };
+    const icon = {
+      info:    'progress_activity',
+      success: 'check_circle',
+      error:   'error',
+    };
+    const spin = kind === 'info' ? ' spin-slow' : '';
+    const t = document.createElement('div');
+    t.setAttribute('data-toast', '');
+    t.className = 'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg ' +
+                  'text-white font-semibold text-sm flex items-center gap-2 ' +
+                  (colors[kind] || 'bg-slate-700');
+    t.innerHTML =
+      '<span class="material-symbols-outlined text-[18px]' + spin + '">' +
+      (icon[kind] || 'info') + '</span>' + message;
+    document.body.appendChild(t);
+    if (kind !== 'info') {
+      setTimeout(() => t.remove(), 3000);
+    }
   }
 
   document.querySelectorAll('[data-action-regen]').forEach(btn => {

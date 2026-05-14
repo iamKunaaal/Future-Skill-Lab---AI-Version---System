@@ -206,7 +206,12 @@ Return JSON exactly matching this schema:
 # ─────────────────────────────────────────────────────────────────────
 LP_OVERVIEW_SCHEMA = """{
   "weekly_overview": "2-3 paragraphs in markdown — the teacher's mental model for the week",
-  "knowledge_focus": "Bullet list (markdown) of the concrete concepts/skills students leave the week with",
+  "week_challenge": {
+    "scenario":         "The Scenario — 4-6 sentences. Concrete Indian setting, named character/organisation, real-world problem.",
+    "output":           "Your Task This Week — what teams will produce (3-5 sentences, observable deliverable).",
+    "success_criteria": ["3-5 bullet points. Each starts with an action verb (Collect, Categorise, Identify, Present...). Observable + testable."]
+  },
+  "knowledge_focus": "Bullet list (markdown) of the concrete concepts/skills students leave the week with. 5-8 bullets, each with a short label then a colon then 1-2 sentences explaining.",
   "competency_rubric": [
     {"code": "MSP__.C_", "name": "Competency name",
      "levels": ["Beginning desc 5-12 words", "Developing 5-12 words", "Proficient 5-12 words", "Mastery 5-12 words"]}
@@ -214,25 +219,37 @@ LP_OVERVIEW_SCHEMA = """{
 }"""
 
 LP_SESSION_SCHEMA = """{
-  "objectives":        ["Specific learning objective 1", "Objective 2"],
-  "materials":         ["Material 1", "Material 2"],
+  "title":               "Short student-facing title for this BP (4-8 words)",
+  "portfolio_points":    ["MANDATORY. 2-3 bullets. What the student documents in their portfolio this session."],
+  "closure":             "MANDATORY. How to wrap up — 2-4 sentences. Closing question/circle + homework cue.",
+  "location":            ["Subset of: Lab, Activity Room, Outdoor, Classroom, Other Areas — pick those that apply"],
+  "materials":           ["Material 1 (with quantity hint, e.g. 'Chart paper (1 sheet per team)')"],
+  "material_preparation": ["Pre-class teacher prep steps. E.g. 'Print 4 sample Indian ads at A5 size'. 2-4 items."],
+  "glossary": [
+    {"term": "Word/phrase", "definition": "1-sentence student-friendly definition"}
+  ],
+  "learning_objectives": [
+    {"sp_name": "SP1. Self-Exploration", "msp_code": "MSP1.C1", "description": "What students will be able to do"}
+  ],
+  "learning_outcomes":   ["Numbered observable outcomes — 4-6 items. Each starts with action verb (Identify, Explain, Compare, Reflect...)."],
   "activities": [
     {
-      "name":               "Hook / activity name",
+      "name":               "Hook / activity name (e.g., 'The Hook: Scroll & Spot')",
       "duration":           "12 min",
-      "description":        "What happens — 2-4 sentences. May use markdown.",
-      "facilitation_notes": "Teacher cues: what to watch for, where students typically struggle"
+      "driving_focus":      "1-2 sentences — what this activity is trying to spark/build in students",
+      "expected_learning":  "1-2 sentences — names the MSP competency and what understanding emerges",
+      "description":        "Detailed instructions — markdown supported. Multiple paragraphs OK. Include sub-steps as a sub-list when natural.",
+      "discussion_prompts": ["Optional. 2-4 prompts students discuss during the activity. Use empty list if not applicable."],
+      "facilitation_notes": "Teacher cues: what to watch for, common student misconceptions, when to press."
     }
-  ],
-  "closure":           "How to wrap up — 1-2 sentences",
-  "portfolio_points":  ["What the student takes away into their portfolio"]
+  ]
 }"""
 
 
 def build_lp_overview_prompt(project: Project, week: Week, weekly_brief: str,
                              competencies: list, kb_questions: list):
-    """Just the weekly framing — overview + rubric + knowledge focus.
-    Lightweight (~2-3K tokens), runs in parallel with session prompts."""
+    """Weekly framing — overview, week challenge, knowledge focus, rubric.
+    Lightweight (~3K tokens), runs in parallel with session prompts."""
     sys_p = _system_prompt(project)
     comp_list = '\n'.join(
         f'- {c["msp_code"]} ({c["sp_name"]}): {c["description"]}'
@@ -241,8 +258,9 @@ def build_lp_overview_prompt(project: Project, week: Week, weekly_brief: str,
     kb_list = '\n'.join(f'- {q}' for q in kb_questions) or '—'
 
     user_p = f"""TASK: Generate the WEEKLY FRAMING section of a lesson plan \
-(overview, knowledge focus, competency rubric). Session-by-session activities \
-will come from a separate parallel call — DO NOT include sessions here.
+(overview, week challenge, knowledge focus, competency rubric). \
+Session-by-session activities come from a separate parallel call — \
+DO NOT include sessions here.
 
 PROJECT CONTEXT:
 {_project_header(project, week)}
@@ -253,14 +271,27 @@ WEEKLY BRIEF (finalised):
 COMPETENCIES TO ADDRESS:
 {comp_list or '—'}
 
-KAUSHAL BODH QUESTIONS:
+KAUSHAL BODH QUESTIONS (for context — these are answered in the doc, not here):
 {kb_list}
 
 {STRICT_COMPETENCY_RULE}
 
 REQUIREMENTS:
-- Rubric: 1 row per competency listed. Each level descriptor 5-12 words, specific.
-- Examples: India-grounded, grade-appropriate.
+- weekly_overview: 2-3 paragraphs in markdown. The teacher's mental model — \
+why this week, what to expect, classroom mood.
+- week_challenge: THIS IS MANDATORY — DO NOT OMIT. Must contain all 3 sub-keys:
+  - week_challenge.scenario: 4-6 sentences, named Indian character/organisation, \
+concrete real-world problem.
+  - week_challenge.output: 3-5 sentences. What teams will produce by end of week \
+(observable deliverable).
+  - week_challenge.success_criteria: 3-5 bullets, each starts with action verb.
+- knowledge_focus: 5-8 markdown bullets. Each "**Label**: 1-2 sentence explanation."
+- competency_rubric: 1 row per competency listed above. Each level descriptor \
+5-12 words, specific and observable.
+- All examples India-grounded, grade-appropriate.
+
+CRITICAL: Your JSON MUST include ALL 4 top-level keys: weekly_overview, week_challenge, \
+knowledge_focus, competency_rubric. Missing any key is a failure.
 
 Return JSON exactly matching this schema:
 {LP_OVERVIEW_SCHEMA}"""
@@ -270,7 +301,7 @@ Return JSON exactly matching this schema:
 def build_lp_session_prompt(project: Project, week: Week, weekly_brief: str,
                             competencies: list, session_data: dict,
                             kb_questions: list):
-    """One session of the lesson plan — fast call (~2-3K tokens)."""
+    """One session of the lesson plan — rich, teacher-ready (~3-4K tokens)."""
     sys_p = _system_prompt(project)
     comp_list = '\n'.join(
         f'- {c["msp_code"]} ({c["sp_name"]}): {c["description"]}'
@@ -299,9 +330,34 @@ KAUSHAL BODH (for context):
 {STRICT_COMPETENCY_RULE}
 
 REQUIREMENTS:
-- 5 timed activities adding up to 80 minutes (Hook → Investigate → Make → Share → Close).
-- Facilitation notes must be specific + actionable.
-- Examples India-grounded, grade-appropriate.
+- title: 4-8 word student-facing title for THIS block period.
+- location: pick from [Lab, Activity Room, Outdoor, Classroom, Other Areas] — \
+which physical spaces this BP uses (usually 1-2).
+- materials: practical list with quantity hints (e.g. "Chart paper (1 sheet \
+per team, from lab inventory)", "Markers (assorted colours)").
+- material_preparation: 2-4 teacher prep items done BEFORE class.
+- glossary: 3-4 key terms with 1-sentence student-friendly definitions.
+- learning_objectives: 2-3 entries, each tied to a specific competency.
+- learning_outcomes: 4-6 numbered, observable outcomes. Start with action verb.
+- activities: EXACTLY 5 timed activities adding up to ~80 minutes \
+(Hook 12 → Story/Context 15 → Mission/Investigate 18 → Decoder/Make 20 → \
+Connect/Close 15). For EACH activity:
+   * driving_focus: 1-2 sentences (what this activity tries to spark/build).
+   * expected_learning: 1-2 sentences naming the MSP competency it advances.
+   * description: detailed, actionable steps in markdown. Multiple paragraphs \
+or sub-bullets OK. Mention specific Indian brands/examples where relevant.
+   * discussion_prompts: 2-4 prompts students answer during the activity.
+   * facilitation_notes: what to watch for, misconceptions, when to press.
+- closure: 2-4 sentences. Closing circle + portfolio cue + homework.
+- portfolio_points: MANDATORY — 2-3 bullets describing what students record \
+in their portfolio this session. E.g. "Paste your mind map from Activity 3", \
+"Write 3 sentences reflecting on the vendor interview". DO NOT leave empty.
+- Include real YouTube/web links where relevant in activity descriptions \
+(e.g. "Show video: https://youtube.com/watch?v=...", "Reference: https://..."). \
+Use actual searchable URLs for Indian educational content, TED-Ed, CBSE resources.
+- India-grounded examples, grade-appropriate language.
+
+CRITICAL: portfolio_points MUST have 2-3 items. Do NOT return an empty list.
 
 Return JSON exactly matching this schema:
 {LP_SESSION_SCHEMA}"""

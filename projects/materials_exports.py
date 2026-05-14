@@ -17,7 +17,9 @@ from django.conf import settings
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt, Cm
+from docx.shared import Pt, Cm, RGBColor
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor as PRGBColor
@@ -578,81 +580,372 @@ def build_challenge_card_pptx(project: Project, week: Week, content: dict) -> io
 # ║  LESSON PLAN — built from scratch (DOCX)                             ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
+# Per-activity dot colors (5 hues that rotate). Matches the PPT theme palette
+# but in docx RGBColor form.
+_ACTIVITY_DOT_COLORS = [
+    RGBColor(0xF5, 0x9E, 0x0B),  # Amber
+    RGBColor(0x10, 0xB9, 0x81),  # Emerald
+    RGBColor(0xEC, 0x48, 0x99),  # Rose
+    RGBColor(0x4F, 0x46, 0xE5),  # Indigo
+    RGBColor(0x06, 0xB6, 0xD4),  # Cyan
+]
+
+# Alternating row shade for tables
+_ALT_ROW_SHADE = 'F8FAFC'
+
+
+def _set_cell_padding(cell, *, top=0.15, bottom=0.15, left=0.2, right=0.2):
+    """Set per-cell padding in cm via the tcMar element.
+    1 cm == 567 twentieths-of-a-point (the dxa unit Word uses)."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    tcMar = OxmlElement('w:tcMar')
+    for side, val in [('top', top), ('left', left), ('bottom', bottom), ('right', right)]:
+        node = OxmlElement(f'w:{side}')
+        node.set(qn('w:w'), str(int(val * 567)))
+        node.set(qn('w:type'), 'dxa')
+        tcMar.append(node)
+    tcPr.append(tcMar)
+
+
+def _apply_table_padding(table, *, top=0.15, bottom=0.15, left=0.2, right=0.2):
+    """Apply uniform cell padding to every cell in a table."""
+    for row in table.rows:
+        for cell in row.cells:
+            _set_cell_padding(cell, top=top, bottom=bottom, left=left, right=right)
+
+
+def _apply_alt_row_shading(table, *, header_rows=1, shade=_ALT_ROW_SHADE):
+    """Apply a subtle background to odd-indexed body rows (skips header)."""
+    for r_idx, row in enumerate(table.rows):
+        if r_idx < header_rows:
+            continue
+        # Odd-index data rows get the shade (0-indexed AFTER header)
+        if (r_idx - header_rows) % 2 == 1:
+            for cell in row.cells:
+                set_cell_shading(cell, shade)
+
+
+def _cell_left_border(cell, color_hex='D97706', sz=24):
+    """Thick left border on a single cell — used for callout boxes."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    tcBorders = OxmlElement('w:tcBorders')
+    left = OxmlElement('w:left')
+    left.set(qn('w:val'), 'single')
+    left.set(qn('w:sz'), str(sz))
+    left.set(qn('w:color'), color_hex)
+    tcBorders.append(left)
+    # Hide the other borders so only left shows
+    for side in ('top', 'right', 'bottom'):
+        b = OxmlElement(f'w:{side}')
+        b.set(qn('w:val'), 'nil')
+        tcBorders.append(b)
+    tcPr.append(tcBorders)
+
+
+def _remove_table_borders(table):
+    """Strip every border from a table (banner / accent line use this)."""
+    tbl = table._element
+    tblPr = tbl.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        tbl.insert(0, tblPr)
+    # Remove any existing tblBorders
+    existing = tblPr.find(qn('w:tblBorders'))
+    if existing is not None:
+        tblPr.remove(existing)
+    tblBorders = OxmlElement('w:tblBorders')
+    for side in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        b = OxmlElement(f'w:{side}')
+        b.set(qn('w:val'), 'nil')
+        tblBorders.append(b)
+    tblPr.append(tblBorders)
+
+
+def _paragraph_top_border(paragraph, color_hex='E2E8F0', sz=6):
+    """Thin horizontal rule above a paragraph (used before section headings)."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    top = OxmlElement('w:top')
+    top.set(qn('w:val'), 'single')
+    top.set(qn('w:sz'), str(sz))
+    top.set(qn('w:space'), '4')
+    top.set(qn('w:color'), color_hex)
+    pBdr.append(top)
+    pPr.append(pBdr)
+
+
+def _set_row_height_exact(table, row_idx, height_pt):
+    """Lock a row to an exact height (Pt)."""
+    tr = table.rows[row_idx]._tr
+    trPr = tr.get_or_add_trPr()
+    h = OxmlElement('w:trHeight')
+    h.set(qn('w:val'), str(int(height_pt * 20)))
+    h.set(qn('w:hRule'), 'exact')
+    trPr.append(h)
+
+
+def _add_cover_banner(doc, color_hex='630ED4', height_pt=18):
+    """Full-width colored strip at the top of the cover page."""
+    t = doc.add_table(rows=1, cols=1)
+    t.autofit = False
+    # Stretch to full page width (~16cm with 2.54cm margins on A4-ish page)
+    try:
+        t.columns[0].width = Cm(16)
+    except Exception:
+        pass
+    cell = t.rows[0].cells[0]
+    set_cell_shading(cell, color_hex)
+    _set_cell_padding(cell, top=0, bottom=0, left=0, right=0)
+    _set_row_height_exact(t, 0, height_pt)
+    _remove_table_borders(t)
+    # Clear the auto paragraph inside
+    cell.paragraphs[0].text = ''
+
+
+def _add_amber_accent_line(doc, color_hex='D97706', width_cm=4.0, height_pt=2):
+    """Short thick amber line — used under the week title on cover."""
+    t = doc.add_table(rows=1, cols=1)
+    t.autofit = False
+    try:
+        t.columns[0].width = Cm(width_cm)
+    except Exception:
+        pass
+    cell = t.rows[0].cells[0]
+    set_cell_shading(cell, color_hex)
+    _set_cell_padding(cell, top=0, bottom=0, left=0, right=0)
+    _set_row_height_exact(t, 0, height_pt)
+    _remove_table_borders(t)
+    cell.paragraphs[0].text = ''
+
+
+def _add_callout_box(doc, body_text, *, label='', bg_hex='FEF3C7',
+                     border_hex='D97706', label_color=None,
+                     body_color=None):
+    """One-cell table styled as a colored callout (used for Facilitation
+    Notes and Closure). Returns the cell for further customisation."""
+    t = doc.add_table(rows=1, cols=1)
+    t.autofit = True
+    _remove_table_borders(t)
+    cell = t.rows[0].cells[0]
+    set_cell_shading(cell, bg_hex)
+    _set_cell_padding(cell, top=0.18, bottom=0.18, left=0.35, right=0.25)
+    _cell_left_border(cell, color_hex=border_hex, sz=28)
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_after = Pt(0)
+    if label:
+        add_styled_run(p, label, bold=True, size=9,
+                       color=label_color if label_color else MUTED)
+        p2 = cell.add_paragraph()
+        p2.paragraph_format.space_after = Pt(0)
+        render_inline(p2, body_text, base_size=10,
+                      base_color=body_color if body_color else INK)
+    else:
+        render_inline(p, body_text, base_size=10,
+                      base_color=body_color if body_color else INK)
+    # Small spacer after callout
+    sp = doc.add_paragraph(); sp.paragraph_format.space_after = Pt(4)
+    return cell
+
+
+def _add_lesson_plan_header_footer(section, week: Week):
+    """Right-aligned crumb in the header + centered page number in footer."""
+    header_p = section.header.paragraphs[0]
+    header_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    # Clear any existing text
+    for r in list(header_p.runs):
+        r._r.getparent().remove(r._r)
+    add_styled_run(header_p,
+                   f'Neorise FSL · Week {week.number} · {week.phase}',
+                   size=8, color=MUTED)
+
+    footer_p = section.footer.paragraphs[0]
+    footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for r in list(footer_p.runs):
+        r._r.getparent().remove(r._r)
+    run = footer_p.add_run()
+    run.font.size = Pt(8)
+    run.font.color.rgb = MUTED
+    # Insert PAGE field
+    fldBegin = OxmlElement('w:fldChar'); fldBegin.set(qn('w:fldCharType'), 'begin')
+    instr = OxmlElement('w:instrText'); instr.text = ' PAGE '
+    fldEnd = OxmlElement('w:fldChar'); fldEnd.set(qn('w:fldCharType'), 'end')
+    run._r.append(fldBegin); run._r.append(instr); run._r.append(fldEnd)
+
+
+def _render_teal_bullets(doc, text: str):
+    """Render markdown bullet list with teal `•` markers instead of the
+    default black List Bullet style. Non-bullet lines fall back to plain
+    paragraphs."""
+    if not text:
+        return
+    import re as _re
+    lines = text.replace('\r\n', '\n').split('\n')
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        m = _re.match(r'^[\-\*•]\s+(.+)$', s)
+        if m:
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Cm(0.6)
+            p.paragraph_format.space_after = Pt(3)
+            add_styled_run(p, '•  ', bold=True, size=11, color=ACCENT_TEAL)
+            render_inline(p, m.group(1))
+        else:
+            # numbered list?
+            mn = _re.match(r'^\d+\.\s+(.+)$', s)
+            if mn:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(0.6)
+                p.paragraph_format.space_after = Pt(3)
+                add_styled_run(p, '•  ', bold=True, size=11, color=ACCENT_TEAL)
+                render_inline(p, mn.group(1))
+            else:
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(4)
+                render_inline(p, s)
+
+
 def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.BytesIO:
-    """Build the Weekly Lesson Plan DOCX from a structured JSON content dict."""
+    """Build the Weekly Lesson Plan DOCX in the client-approved layout.
+
+    Sections per week:
+      1. Cover (title + project meta table)
+      2. Weekly Overview
+      3. Week Challenge (3-row table: scenario / output / success criteria)
+      4. Knowledge Focus (bullet list)
+      5. Kaushal Bodh — Reflection Questions
+      6. Competency Rubric (5-col table)
+      7. Per block period:
+         - Location row (5 cells with ☑ markers)
+         - Materials Needed + Material Preparation
+         - Glossary
+         - Learning Objectives + Learning Outcomes (2-col table)
+         - Activity Flow — for each activity:
+            · Title + duration
+            · Driving Focus + Expected Learning (2-col table)
+            · Description
+            · Discussion prompts
+            · Facilitation notes
+         - Closure
+         - Portfolio Points
+    """
     doc = Document()
     normal = doc.styles['Normal']
     normal.font.name = 'Calibri'
     normal.font.size = Pt(11)
     normal.font.color.rgb = INK
+    normal.paragraph_format.line_spacing = 1.15  # match client reference
 
     for section in doc.sections:
-        section.top_margin = Cm(1.8)
-        section.bottom_margin = Cm(1.8)
-        section.left_margin = Cm(2.0)
-        section.right_margin = Cm(2.0)
+        section.top_margin = Cm(2.54)   # 1 inch — matches client reference
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(2.54)
+        section.right_margin = Cm(2.54)
+        # Page header + footer (#6)
+        _add_lesson_plan_header_footer(section, week)
 
-    # ── Cover ─────────────────────────────────────────────────────────
+    # ── 1. Cover ──────────────────────────────────────────────────────
     title_para = doc.add_paragraph()
-    title_para.paragraph_format.space_before = Pt(40)
-    title_para.paragraph_format.space_after = Pt(2)
+    title_para.paragraph_format.space_before = Pt(48)
+    title_para.paragraph_format.space_after = Pt(4)
     add_styled_run(title_para, 'NEORISE FSL · WEEKLY LESSON PLAN',
                    bold=True, size=10, color=PRIMARY)
 
     p = doc.add_paragraph()
-    p.paragraph_format.space_after = Pt(4)
-    add_styled_run(p, project.topic, bold=True, size=24, color=INK)
+    p.paragraph_format.space_after = Pt(10)
+    add_styled_run(p, project.topic, bold=True, size=26, color=INK)
 
     p = doc.add_paragraph()
-    p.paragraph_format.space_after = Pt(20)
-    add_styled_run(p, f'Week {week.number} — {week.phase}', bold=True, size=14, color=ACCENT_AMBER)
+    p.paragraph_format.space_after = Pt(6)
+    add_styled_run(p, f'Week {week.number} — {week.phase}',
+                   bold=True, size=15, color=ACCENT_AMBER)
+
+    # (#1) Thin amber accent line under week title
+    _add_amber_accent_line(doc, color_hex='D97706', width_cm=4.0, height_pt=2)
+
+    sp = doc.add_paragraph()
+    sp.paragraph_format.space_after = Pt(18)
 
     meta = doc.add_table(rows=0, cols=2)
     meta.autofit = True
-    rows = [
-        ('Grade',         project.grade),
-        ('Subject Track', project.get_subject_track_display()),
-        ('Tech Focus',    ', '.join(project.tech_competency) or '—'),
-        ('Phase',         week.phase),
-        ('Block Periods', ', '.join(f'BP{s.number}' for s in week.sessions.order_by('number'))),
+    meta_rows = [
+        ('GRADE',         project.grade),
+        ('SUBJECT TRACK', project.get_subject_track_display()),
+        ('TECH FOCUS',    ', '.join(project.tech_competency) or '—'),
+        ('PHASE',         week.phase),
+        ('BLOCK PERIODS', ', '.join(f'BP{s.number}' for s in week.sessions.order_by('number'))),
     ]
-    for label, value in rows:
+    for label, value in meta_rows:
         row = meta.add_row().cells
         row[0].width = Cm(4.5)
         set_cell_shading(row[0], 'F1F5F9')
-        add_styled_run(row[0].paragraphs[0], label.upper(), bold=True, size=9, color=MUTED)
+        add_styled_run(row[0].paragraphs[0], label, bold=True, size=9, color=MUTED)
         add_styled_run(row[1].paragraphs[0], str(value), size=10, color=INK)
+    _apply_table_padding(meta, top=0.15, bottom=0.15, left=0.2, right=0.2)
 
     doc.add_page_break()
 
-    # ── Weekly Overview ───────────────────────────────────────────────
-    h = doc.add_paragraph()
-    add_styled_run(h, 'WEEKLY OVERVIEW', bold=True, size=14, color=PRIMARY)
+    # ── 2. Weekly Overview ────────────────────────────────────────────
+    _section_heading(doc, 'WEEKLY OVERVIEW')
     if content.get('weekly_overview'):
         render_markdown(doc, content['weekly_overview'])
 
-    # ── Knowledge Focus ───────────────────────────────────────────────
-    if content.get('knowledge_focus'):
-        h = doc.add_paragraph()
-        h.paragraph_format.space_before = Pt(12)
-        add_styled_run(h, 'KNOWLEDGE FOCUS', bold=True, size=14, color=PRIMARY)
-        render_markdown(doc, content['knowledge_focus'])
+    # ── 3. Week Challenge ─────────────────────────────────────────────
+    challenge = content.get('week_challenge') or {}
+    if challenge:
+        _section_heading(doc, f'WEEK {week.number} CHALLENGE', space_before=14)
+        ct = doc.add_table(rows=0, cols=2)
+        ct.autofit = True
+        rows = [
+            ('1. Challenge',     challenge.get('scenario', '')),
+            ('Output',           challenge.get('output', '')),
+            ('Success Criteria', challenge.get('success_criteria', [])),
+        ]
+        for label, val in rows:
+            r = ct.add_row().cells
+            r[0].width = Cm(4.5)
+            set_cell_shading(r[0], 'EDE9FE')
+            add_styled_run(r[0].paragraphs[0], label,
+                           bold=True, size=10, color=PRIMARY)
+            if isinstance(val, list):
+                first = True
+                for v in val:
+                    p = r[1].paragraphs[0] if first else r[1].add_paragraph()
+                    first = False
+                    add_styled_run(p, '• ', bold=True, size=10, color=ACCENT_TEAL)
+                    render_inline(p, str(v))
+            else:
+                render_inline(r[1].paragraphs[0], str(val))
+        # (#5) Padding on week challenge table
+        _apply_table_padding(ct)
 
-    # ── Competency Rubric ─────────────────────────────────────────────
+    # ── 4. Knowledge Focus ────────────────────────────────────────────
+    if content.get('knowledge_focus'):
+        _section_heading(doc, 'KNOWLEDGE FOCUS', space_before=14)
+        # (#8) teal bullet markers instead of default black
+        _render_teal_bullets(doc, content['knowledge_focus'])
+
+    # ── 5. Kaushal Bodh — Reflection Questions ────────────────────────
+    kb_questions = week.kaushal_bodh_questions or []
+    if kb_questions:
+        _section_heading(doc, 'KAUSHAL BODH — REFLECTION QUESTIONS', space_before=14)
+        for q in kb_questions:
+            p = doc.add_paragraph(style='List Bullet')
+            p.paragraph_format.space_after = Pt(2)
+            render_inline(p, str(q))
+
+    # ── 6. Competency Rubric ──────────────────────────────────────────
     rubric = content.get('competency_rubric', [])
     if rubric:
-        h = doc.add_paragraph()
-        h.paragraph_format.space_before = Pt(14)
-        h.paragraph_format.space_after = Pt(4)
-        add_styled_run(h, 'COMPETENCY RUBRIC', bold=True, size=14, color=PRIMARY)
-
+        _section_heading(doc, 'COMPETENCY RUBRIC', space_before=14)
         rt = doc.add_table(rows=1, cols=5)
-        rt.style = 'Light Grid Accent 1'
+        rt.style = None
         rt.autofit = True
         head = rt.rows[0].cells
         for i, label in enumerate(['Code / Competency', 'Beginning', 'Developing', 'Proficient', 'Mastery']):
             set_cell_shading(head[i], 'EDE9FE')
-            add_styled_run(head[i].paragraphs[0], label, bold=True, size=9, color=PRIMARY)
+            add_styled_run(head[i].paragraphs[0], label, bold=False, size=9, color=PRIMARY)
         for item in rubric:
             row = rt.add_row().cells
             cell_p = row[0].paragraphs[0]
@@ -661,8 +954,11 @@ def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.By
             add_styled_run(sub, item.get('name', ''), size=9, color=INK)
             for j, level in enumerate(item.get('levels', [])[:4]):
                 add_styled_run(row[j + 1].paragraphs[0], str(level), size=9, color=INK)
+        # (#5) Padding + alt-row shading on rubric table
+        _apply_table_padding(rt)
+        _apply_alt_row_shading(rt, header_rows=1)
 
-    # ── Per-session breakdown ─────────────────────────────────────────
+    # ── 7. Per-session breakdown ──────────────────────────────────────
     sessions_in_week = list(week.sessions.order_by('number'))
     session_data = content.get('sessions', [])
 
@@ -671,17 +967,17 @@ def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.By
 
         doc.add_page_break()
 
+        # BP banner
         h = doc.add_paragraph()
         h.paragraph_format.space_after = Pt(0)
         add_styled_run(h, f'SESSION {session.number} · BLOCK PERIOD {session.number}',
                        bold=True, size=10, color=MUTED)
 
+        title_text = s_content.get('title') or session.name
         h2 = doc.add_paragraph()
         h2.paragraph_format.space_after = Pt(8)
-        add_styled_run(h2, session.name, bold=True, size=18, color=INK)
+        add_styled_run(h2, title_text, bold=True, size=18, color=INK)
 
-        # If this session's AI call failed, surface a clear placeholder
-        # rather than rendering an empty section that looks broken.
         if not s_content:
             warn = doc.add_paragraph()
             warn.paragraph_format.space_before = Pt(12)
@@ -693,86 +989,239 @@ def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.By
             )
             continue
 
-        # Objectives
-        objectives = s_content.get('objectives', [])
-        if objectives:
-            sh = doc.add_paragraph()
-            sh.paragraph_format.space_before = Pt(8)
-            sh.paragraph_format.space_after = Pt(2)
-            add_styled_run(sh, 'LEARNING OBJECTIVES', bold=True, size=10, color=ACCENT_TEAL)
-            for o in objectives:
-                p = doc.add_paragraph(style='List Bullet')
-                p.paragraph_format.space_after = Pt(2)
-                render_inline(p, str(o))
+        # Location checkbox row
+        _location_row(doc, s_content.get('location', []))
 
-        # Materials
+        # Materials Needed
         materials = s_content.get('materials', [])
         if materials:
-            sh = doc.add_paragraph()
-            sh.paragraph_format.space_before = Pt(8)
-            sh.paragraph_format.space_after = Pt(2)
-            add_styled_run(sh, 'MATERIALS NEEDED', bold=True, size=10, color=ACCENT_TEAL)
+            _section_heading(doc, 'MATERIALS NEEDED', size=10, color=ACCENT_TEAL, space_before=10)
             for m in materials:
                 p = doc.add_paragraph(style='List Bullet')
                 p.paragraph_format.space_after = Pt(2)
                 render_inline(p, str(m))
 
-        # Activities
-        activities = s_content.get('activities', [])
-        if activities:
-            sh = doc.add_paragraph()
-            sh.paragraph_format.space_before = Pt(10)
-            sh.paragraph_format.space_after = Pt(4)
-            add_styled_run(sh, 'ACTIVITY FLOW', bold=True, size=10, color=ACCENT_TEAL)
-            for i, act in enumerate(activities, 1):
-                # Activity header
-                ah = doc.add_paragraph()
-                ah.paragraph_format.space_before = Pt(6)
-                ah.paragraph_format.space_after = Pt(2)
-                add_styled_run(ah, f'Activity {i}: {act.get("name", "")}',
-                               bold=True, size=12, color=PRIMARY)
-                add_styled_run(ah, f'   ({act.get("duration", "—")})',
-                               size=10, color=MUTED, italic=True)
+        # Learning Objectives + Outcomes (2-col table) — moved up to match reference
+        objectives = s_content.get('learning_objectives', [])
+        outcomes   = s_content.get('learning_outcomes', [])
+        if objectives or outcomes:
+            _section_heading(doc, 'LEARNING OBJECTIVES & OUTCOMES',
+                             size=10, color=ACCENT_TEAL, space_before=10)
+            t = doc.add_table(rows=1, cols=2)
+            t.style = None
+            t.autofit = True
+            head = t.rows[0].cells
+            set_cell_shading(head[0], 'EDE9FE')
+            set_cell_shading(head[1], 'EDE9FE')
+            add_styled_run(head[0].paragraphs[0], 'LEARNING OBJECTIVES',
+                           bold=True, size=9, color=PRIMARY)
+            add_styled_run(head[1].paragraphs[0], 'LEARNING OUTCOMES',
+                           bold=True, size=9, color=PRIMARY)
+            # One row per competency (matching client reference)
+            max_rows = max(len(objectives), len(outcomes))
+            for row_idx in range(max_rows):
+                r = t.add_row().cells
+                if row_idx < len(objectives):
+                    obj = objectives[row_idx]
+                    if isinstance(obj, dict):
+                        sp_name  = obj.get('sp_name', '')
+                        msp_code = obj.get('msp_code', '')
+                        desc     = obj.get('description', '')
+                    else:
+                        sp_name, msp_code, desc = '', '', str(obj)
+                    p = r[0].paragraphs[0]
+                    if sp_name or msp_code:
+                        add_styled_run(p, f'{sp_name} ', bold=True, size=9, color=PRIMARY)
+                        if msp_code:
+                            add_styled_run(p, f'| {msp_code} ', bold=True, size=9, color=ACCENT_AMBER, font='Consolas')
+                    if desc:
+                        add_styled_run(p, f'\n{desc}', size=9, color=INK)
+                if row_idx < len(outcomes):
+                    p = r[1].paragraphs[0]
+                    add_styled_run(p, f'{row_idx + 1}. ', bold=True, size=9, color=ACCENT_TEAL)
+                    render_inline(p, str(outcomes[row_idx]), base_size=9, base_color=INK)
+            # (#5) Padding + alt-row shading on objectives table
+            _apply_table_padding(t)
+            _apply_alt_row_shading(t, header_rows=1)
 
-                if act.get('description'):
-                    render_markdown(doc, str(act['description']))
-
-                if act.get('facilitation_notes'):
-                    fh = doc.add_paragraph()
-                    fh.paragraph_format.space_before = Pt(2)
-                    fh.paragraph_format.space_after = Pt(2)
-                    add_styled_run(fh, 'Facilitation Notes:', bold=True,
-                                   size=9, color=ACCENT_AMBER)
-                    fp = doc.add_paragraph()
-                    fp.paragraph_format.left_indent = Cm(0.6)
-                    fp.paragraph_format.space_after = Pt(4)
-                    render_inline(fp, str(act['facilitation_notes']),
-                                  base_size=10, base_color=MUTED)
-
-        # Closure
-        if s_content.get('closure'):
-            sh = doc.add_paragraph()
-            sh.paragraph_format.space_before = Pt(10)
-            sh.paragraph_format.space_after = Pt(2)
-            add_styled_run(sh, 'CLOSURE', bold=True, size=10, color=ACCENT_TEAL)
-            render_markdown(doc, str(s_content['closure']))
-
-        # Portfolio points
-        portfolio_points = s_content.get('portfolio_points', [])
-        if portfolio_points:
-            sh = doc.add_paragraph()
-            sh.paragraph_format.space_before = Pt(8)
-            sh.paragraph_format.space_after = Pt(2)
-            add_styled_run(sh, 'PORTFOLIO POINTS', bold=True, size=10, color=ACCENT_TEAL)
-            for pp in portfolio_points:
+        # Material Preparation
+        prep = s_content.get('material_preparation', [])
+        if prep:
+            _section_heading(doc, 'MATERIAL PREPARATION', size=10, color=ACCENT_TEAL, space_before=10)
+            for m in prep:
                 p = doc.add_paragraph(style='List Bullet')
                 p.paragraph_format.space_after = Pt(2)
+                render_inline(p, str(m))
+
+        # Glossary
+        glossary = s_content.get('glossary', [])
+        if glossary:
+            _section_heading(doc, 'GLOSSARY', size=14, color=PRIMARY, space_before=8)
+            for item in glossary:
+                if isinstance(item, dict):
+                    term = item.get('term', '')
+                    defn = item.get('definition', '')
+                else:
+                    term, defn = '', str(item)
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(0.4)
+                p.paragraph_format.space_after = Pt(2)
+                if term:
+                    add_styled_run(p, f'{term}: ', bold=True, size=10, color=INK)
+                render_inline(p, defn, base_size=10, base_color=INK)
+
+        # Activity Flow
+        activities = s_content.get('activities', [])
+        if activities:
+            _section_heading(doc, 'ACTIVITY FLOW', size=10, color=ACCENT_TEAL, space_before=12)
+            for i, act in enumerate(activities, 1):
+                _render_activity(doc, i, act)
+
+        # (#4) Closure wrapped in light-purple quote box with purple left border
+        if s_content.get('closure'):
+            _section_heading(doc, 'CLOSURE', size=10, color=ACCENT_TEAL, space_before=10)
+            _add_callout_box(
+                doc,
+                body_text=str(s_content['closure']),
+                label='',                 # no label, just the quote body
+                bg_hex='EDE9FE',          # light purple
+                border_hex='630ED4',      # primary purple
+                body_color=INK,
+            )
+
+        # Portfolio points — NOT rendered per session; consolidated at week end
+
+    # ── 8. Weekly Portfolio Points (consolidated from both sessions) ───
+    all_portfolio = []
+    for idx, session in enumerate(sessions_in_week):
+        s_content = session_data[idx] if idx < len(session_data) else {}
+        pts = s_content.get('portfolio_points', [])
+        if pts:
+            all_portfolio.append((session, pts))
+
+    if all_portfolio:
+        doc.add_page_break()
+        _section_heading(doc, 'WEEKLY PORTFOLIO POINTS', size=14, color=PRIMARY, space_before=12)
+        p_intro = doc.add_paragraph()
+        p_intro.paragraph_format.space_after = Pt(8)
+        add_styled_run(p_intro,
+                       'Record the following in your individual portfolio this week:',
+                       italic=True, size=11, color=MUTED)
+
+        for session, pts in all_portfolio:
+            bp_label = doc.add_paragraph()
+            bp_label.paragraph_format.space_before = Pt(8)
+            bp_label.paragraph_format.space_after = Pt(4)
+            add_styled_run(bp_label, f'Block Period {session.number}: {session.name}',
+                           bold=True, size=11, color=ACCENT_TEAL)
+            for pp in pts:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(0.6)
+                p.paragraph_format.space_after = Pt(3)
+                add_styled_run(p, '✎  ', bold=True, size=11, color=PRIMARY)
                 render_inline(p, str(pp))
 
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
     return buf
+
+
+def _section_heading(doc, text, *, size=14, color=PRIMARY, space_before=8,
+                     divider=True):
+    """Section heading with an optional thin gray rule above (#2 design spec).
+    The divider is suppressed for small subsection headings inside a BP
+    (size <= 10) to avoid visual clutter."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(space_before)
+    p.paragraph_format.space_after = Pt(4)
+    if divider and size >= 12:
+        _paragraph_top_border(p, color_hex='E2E8F0', sz=6)
+        # Add some breathing room between rule and heading text
+        p.paragraph_format.space_before = Pt(max(space_before, 12))
+    add_styled_run(p, text, bold=True, size=size, color=color)
+
+
+# Standard physical-location options for a session
+_LOCATIONS = ['Lab', 'Activity Room', 'Outdoor', 'Classroom', 'Other Areas']
+
+
+def _location_row(doc, selected: list):
+    """5-col row showing which physical spaces this BP uses."""
+    selected_lower = {str(s).strip().lower() for s in (selected or [])}
+    t = doc.add_table(rows=1, cols=5)
+    t.style = None
+    t.autofit = True
+    for i, loc in enumerate(_LOCATIONS):
+        cell = t.rows[0].cells[i]
+        on = loc.lower() in selected_lower
+        if on:
+            set_cell_shading(cell, 'D1FAE5')
+        else:
+            set_cell_shading(cell, 'F8FAFC')
+        mark = '☑ ' if on else '☐ '
+        add_styled_run(cell.paragraphs[0], mark + loc,
+                       bold=on, size=9,
+                       color=ACCENT_TEAL if on else MUTED)
+    # (#5) Padding on location table
+    _apply_table_padding(t, top=0.12, bottom=0.12, left=0.15, right=0.15)
+
+
+def _render_activity(doc, idx: int, act: dict):
+    """Render one activity block: title + driving-focus table + body."""
+    # Visual spacer between activities (matches client reference)
+    if idx > 1:
+        spacer = doc.add_paragraph()
+        spacer.style = doc.styles['Heading 2'] if 'Heading 2' in [s.name for s in doc.styles] else doc.styles['Normal']
+        spacer.paragraph_format.space_before = Pt(6)
+        spacer.paragraph_format.space_after = Pt(6)
+        spacer.text = ''
+
+    # Activity title — (#7) prefixed with a small colored dot
+    dot_color = _ACTIVITY_DOT_COLORS[(idx - 1) % len(_ACTIVITY_DOT_COLORS)]
+    ah = doc.add_paragraph()
+    ah.paragraph_format.space_before = Pt(8)
+    ah.paragraph_format.space_after = Pt(4)
+    add_styled_run(ah, '● ', bold=True, size=14, color=dot_color)
+    add_styled_run(ah, f'Activity {idx}: {act.get("name", "")}',
+                   bold=True, size=12, color=PRIMARY)
+    add_styled_run(ah, f'   ({act.get("duration", "—")})',
+                   size=10, color=MUTED, italic=True)
+
+    # Driving Focus + Expected Learning — 1-row 2-col with inline labels
+    df = act.get('driving_focus', '')
+    el = act.get('expected_learning', '')
+    if df or el:
+        t = doc.add_table(rows=1, cols=2)
+        t.style = None
+        t.autofit = True
+        c = t.rows[0].cells
+        set_cell_shading(c[0], 'FAF5FF')
+        set_cell_shading(c[1], 'FAF5FF')
+        p0 = c[0].paragraphs[0]
+        add_styled_run(p0, 'Driving Focus : ', bold=True, size=10, color=PRIMARY)
+        render_inline(p0, str(df), base_size=10, base_color=INK)
+        p1 = c[1].paragraphs[0]
+        add_styled_run(p1, 'Expected Learning : ', bold=True, size=10, color=PRIMARY)
+        render_inline(p1, str(el), base_size=10, base_color=INK)
+        # (#5) Cell padding
+        _apply_table_padding(t, top=0.15, bottom=0.15, left=0.2, right=0.2)
+
+    # Description
+    if act.get('description'):
+        render_markdown(doc, str(act['description']))
+
+    # (#3) Facilitation notes wrapped in an amber callout box with left border
+    if act.get('facilitation_notes'):
+        _add_callout_box(
+            doc,
+            body_text=str(act['facilitation_notes']),
+            label='FACILITATION NOTES',
+            bg_hex='FEF3C7',          # light amber/cream
+            border_hex='D97706',      # amber-600
+            label_color=ACCENT_AMBER,
+            body_color=INK,
+        )
 
 
 # ╔══════════════════════════════════════════════════════════════════════╗
