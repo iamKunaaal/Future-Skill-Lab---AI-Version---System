@@ -234,13 +234,49 @@ LP_SESSION_SCHEMA = """{
   "learning_outcomes":   ["Numbered observable outcomes — 4-6 items. Each starts with action verb (Identify, Explain, Compare, Reflect...)."],
   "activities": [
     {
-      "name":               "Hook / activity name (e.g., 'The Hook: Scroll & Spot')",
+      "name":               "<<REPLACE: full activity title for slot 1 HOOK, e.g. 'The Hook: Scroll & Spot'>>",
       "duration":           "12 min",
-      "driving_focus":      "1-2 sentences — what this activity is trying to spark/build in students",
-      "expected_learning":  "1-2 sentences — names the MSP competency and what understanding emerges",
-      "description":        "Detailed instructions — markdown supported. Multiple paragraphs OK. Include sub-steps as a sub-list when natural.",
-      "discussion_prompts": ["Optional. 2-4 prompts students discuss during the activity. Use empty list if not applicable."],
-      "facilitation_notes": "Teacher cues: what to watch for, common student misconceptions, when to press."
+      "driving_focus":      "1-2 sentences — what this activity is trying to spark/build",
+      "expected_learning":  "1-2 sentences — names the MSP competency",
+      "description":        "Detailed instructions — markdown supported. Multiple paragraphs OK.",
+      "discussion_prompts": ["2-4 prompts students discuss during the activity"],
+      "facilitation_notes": "Teacher cues: what to watch for, misconceptions"
+    },
+    {
+      "name":               "<<REPLACE: full activity title for slot 2 STORY/CONTEXT, e.g. 'The Story: Meet Meera'>>",
+      "duration":           "15 min",
+      "driving_focus":      "1-2 sentences",
+      "expected_learning":  "1-2 sentences",
+      "description":        "Narrative or framing that anchors the topic",
+      "discussion_prompts": ["2-4 prompts"],
+      "facilitation_notes": "Teacher cues"
+    },
+    {
+      "name":               "<<REPLACE: full activity title for slot 3 MISSION/INVESTIGATE>>",
+      "duration":           "18 min",
+      "driving_focus":      "1-2 sentences",
+      "expected_learning":  "1-2 sentences",
+      "description":        "Students collect / observe / research",
+      "discussion_prompts": ["2-4 prompts"],
+      "facilitation_notes": "Teacher cues"
+    },
+    {
+      "name":               "<<REPLACE: full activity title for slot 4 DECODER/MAKE>>",
+      "duration":           "20 min",
+      "driving_focus":      "1-2 sentences",
+      "expected_learning":  "1-2 sentences",
+      "description":        "Students build, decode, or analyse",
+      "discussion_prompts": ["2-4 prompts"],
+      "facilitation_notes": "Teacher cues"
+    },
+    {
+      "name":               "<<REPLACE: full activity title for slot 5 REFLECT & APPLY, e.g. 'Connecting Careers & Portfolio Reflection'>>",
+      "duration":           "15 min",
+      "driving_focus":      "1-2 sentences — what this synthesis activity is for",
+      "expected_learning":  "1-2 sentences",
+      "description":        "Students synthesise what they learned — share insights, link to their lives, set next-step goals, complete a portfolio entry. This is a FULL activity with detailed steps, NOT just a 1-line wrap-up.",
+      "discussion_prompts": ["2-4 reflection prompts (e.g. 'What surprised you today?')"],
+      "facilitation_notes": "How to run the closing reflection"
     }
   ]
 }"""
@@ -371,12 +407,19 @@ Use actual searchable URLs for Indian educational content, TED-Ed, CBSE resource
 - India-grounded examples, grade-appropriate language.
 
 CRITICAL — REREAD BEFORE RETURNING JSON:
-1. `activities` array MUST contain EXACTLY 5 items. Count them: 1, 2, 3, 4, 5. \
-Returning 3, 4, or 6 is invalid. Each of the 5 fixed slots (Hook, Story, \
-Mission, Decoder, Close) MUST be its own separate activity object.
-2. `portfolio_points` MUST have 2-3 items. Do NOT return an empty list.
+1. The `activities` array in the schema below has FIVE PRE-DEFINED slots, \
+each marked `[REQUIRED slot N — NAME]`. You MUST keep all 5 slots and \
+return ALL 5 activities in the SAME order. Do NOT delete, merge, or skip \
+any slot. Treat the schema as a TEMPLATE — your job is to FILL the \
+content for each of the 5 slots, NOT to redesign the structure.
+2. Count after writing: 1, 2, 3, 4, 5. If you have fewer than 5, GO BACK \
+and add the missing slot(s).
+3. Activity #5 (Reflect & Apply) is its OWN full student activity — \
+SEPARATE from the `closure` field. Include both.
+4. `portfolio_points` MUST have 2-3 items. Do NOT return an empty list.
 
-Return JSON exactly matching this schema:
+Return JSON exactly matching this schema (the activities array has 5 \
+pre-defined slots — fill ALL of them):
 {LP_SESSION_SCHEMA}"""
     return sys_p, user_p
 

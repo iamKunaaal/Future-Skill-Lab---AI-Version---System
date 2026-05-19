@@ -594,6 +594,41 @@ _ACTIVITY_DOT_COLORS = [
 _ALT_ROW_SHADE = 'F8FAFC'
 
 
+# Patterns for skeleton-template placeholders the AI sometimes leaves in
+# activity names / descriptions when the LP_SESSION_SCHEMA uses a slot
+# template. We strip them at render time so existing dirty data also
+# renders clean without a regenerate.
+_LP_PLACEHOLDER_PATTERNS = [
+    re.compile(r'^\s*\[\s*(?:REQUIRED\s+)?slot\s*\d+\s*[—\-:–]\s*[^\]]*\]\s*[:\-–—]?\s*',
+               re.IGNORECASE),
+    re.compile(r'^\s*<<\s*REPLACE\s*:[^>]*>>\s*[:\-–—]?\s*', re.IGNORECASE),
+    re.compile(r'<<\s*REPLACE\s*:[^>]*>>', re.IGNORECASE),
+]
+
+
+def _scrub_lp_placeholders(content: dict) -> dict:
+    """Return a copy of the LP content dict with skeleton placeholders
+    stripped from activity string fields. Non-destructive — the input
+    dict is not mutated."""
+    if not isinstance(content, dict):
+        return content
+    import copy as _copy
+    c = _copy.deepcopy(content)
+    for s in c.get('sessions', []) or []:
+        if not isinstance(s, dict):
+            continue
+        for a in s.get('activities', []) or []:
+            if not isinstance(a, dict):
+                continue
+            for field in ('name', 'driving_focus', 'expected_learning', 'description'):
+                v = a.get(field)
+                if isinstance(v, str):
+                    for pat in _LP_PLACEHOLDER_PATTERNS:
+                        v = pat.sub('', v)
+                    a[field] = v.strip()
+    return c
+
+
 def _set_cell_padding(cell, *, top=0.15, bottom=0.15, left=0.2, right=0.2):
     """Set per-cell padding in cm via the tcMar element.
     1 cm == 567 twentieths-of-a-point (the dxa unit Word uses)."""
@@ -830,6 +865,12 @@ def build_lesson_plan_docx(project: Project, week: Week, content: dict) -> io.By
          - Closure
          - Portfolio Points
     """
+    # Defensive: scrub any leftover skeleton placeholders ("[REQUIRED slot
+    # N — NAME]" / "<<REPLACE: ...>>") in case the AI leaked them into a
+    # previously-saved JSON. Strip is also done at generation time; this
+    # makes rebuilds from stale data render cleanly too.
+    content = _scrub_lp_placeholders(content)
+
     doc = Document()
     normal = doc.styles['Normal']
     normal.font.name = 'Calibri'

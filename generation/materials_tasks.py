@@ -23,6 +23,184 @@ def _enabled(component: str) -> bool:
                                  'session1_ppt', 'session2_ppt'])
 
 
+# ── LP synthesis fallback ──────────────────────────────────────────────────
+# Each slot has a default skeleton used ONLY if the AI returns fewer than 5
+# activities after all retries. The AI's own `closure` and `portfolio_points`
+# are spliced into the Reflect & Apply slot so the content stays relevant.
+_LP_SLOT_TEMPLATES = [
+    {
+        'name': 'Hook: Spark Curiosity',
+        'duration': '12 min',
+        'driving_focus': 'Open the session by surfacing what students already notice and feel about the topic.',
+        'expected_learning': 'Students bring their prior experiences to the surface and develop curiosity about the week’s focus.',
+        'description': ('Begin with a short observation or question linked to the session topic. '
+                        'Invite students to share initial reactions in pairs, then collect 3-4 responses on the board. '
+                        'Use this to bridge into the main investigation.'),
+        'discussion_prompts': [
+            'What does this remind you of from your own life?',
+            'What questions does it raise for you?',
+        ],
+        'facilitation_notes': 'Keep the hook open-ended; resist the urge to teach yet. Listen for misconceptions you can revisit later.',
+    },
+    {
+        'name': 'Story / Context: Anchoring the Challenge',
+        'duration': '15 min',
+        'driving_focus': 'Give students the human and real-world context they need to make sense of the upcoming work.',
+        'expected_learning': 'Students see who is affected by the issue and why it matters in an Indian setting.',
+        'description': ('Share a short narrative — a named character, place, or local example tied to the session topic. '
+                        'Use 1-2 images or a 2-minute clip if available. Pause once to ask students to predict what happens next.'),
+        'discussion_prompts': [
+            'Who in this story sounds like someone from your community?',
+            'What is at stake for them?',
+        ],
+        'facilitation_notes': 'Keep the narrative concrete, not abstract. Resist generalisations — root every example in a real place or person.',
+    },
+    {
+        'name': 'Mission / Investigate: Field Inquiry',
+        'duration': '18 min',
+        'driving_focus': 'Move students from passive listening into active collection of evidence.',
+        'expected_learning': 'Students gather observations, data, or examples that they will use later in the session.',
+        'description': ('Introduce the investigation. Students work in groups of 4-6 to collect, sort, or document examples '
+                        'related to the topic. Provide a clear capture sheet or template so the data is usable later.'),
+        'discussion_prompts': [
+            'What patterns are you noticing across your examples?',
+            'Which example surprised you most? Why?',
+        ],
+        'facilitation_notes': 'Circulate quickly; ask groups one probing question each rather than giving answers.',
+    },
+    {
+        'name': 'Decoder / Make: Build and Decode',
+        'duration': '20 min',
+        'driving_focus': 'Students use the evidence they collected to build, decode, or analyse a concrete artefact.',
+        'expected_learning': 'Students apply session concepts to produce something tangible they can show or explain.',
+        'description': ('Teams take their captured evidence and create a poster, mind-map, prototype, or short analysis. '
+                        'Provide a clear deliverable format. Display all team outputs at the end for a quick gallery walk.'),
+        'discussion_prompts': [
+            'What choice in your design are you most proud of?',
+            'What would you change if you had another 20 minutes?',
+        ],
+        'facilitation_notes': 'Push teams that finish early to add labels or one extra layer; coach stuck teams with one specific next step.',
+    },
+    {
+        'name': 'Reflect & Apply: Synthesise and Connect',
+        'duration': '15 min',
+        'driving_focus': 'Students consolidate what they learned and connect it back to their own lives and goals.',
+        'expected_learning': 'Students articulate one personal insight from the session and capture a portfolio entry.',
+        'description': ('Bring the class together in a circle. Each student writes one sentence in their portfolio answering: '
+                        '“What did I learn today that I want to remember?” Invite 3-4 students to read theirs aloud. '
+                        'Connect the responses back to the week’s driving question.'),
+        'discussion_prompts': [
+            'What is one thing you will pay attention to differently this week?',
+            'What is one question that is still open for you?',
+        ],
+        'facilitation_notes': 'Keep the reflection low-stakes — every voice counts, no “right” answers.',
+    },
+]
+
+# Keyword set used by both detection and synthesis to identify which slot
+# each existing activity corresponds to.
+_LP_SLOT_KEYWORDS = [
+    ('hook',),
+    ('story', 'context', 'narrative'),
+    ('mission', 'investigate', 'research', 'explore'),
+    ('decoder', 'make', 'build', 'create', 'design'),
+    ('reflect', 'apply', 'close', 'synth', 'connect'),
+]
+
+
+_SLOT_TAG_PATTERNS = [
+    # Old format: "[REQUIRED slot 1 — HOOK] ..."
+    re.compile(r'^\s*\[\s*(?:REQUIRED\s+)?slot\s*\d+\s*[—\-:–]\s*[^\]]*\]\s*[:\-–—]?\s*',
+               re.IGNORECASE),
+    # New format: "<<REPLACE: ...>>"
+    re.compile(r'^\s*<<\s*REPLACE\s*:[^>]*>>\s*[:\-–—]?\s*', re.IGNORECASE),
+    # Standalone placeholders that might appear mid-string
+    re.compile(r'<<\s*REPLACE\s*:[^>]*>>', re.IGNORECASE),
+]
+
+
+def _strip_slot_placeholders(session_dict: dict) -> dict:
+    """Remove leftover skeleton-template placeholders from AI output.
+    Both the old `[REQUIRED slot N — NAME]` form and the new
+    `<<REPLACE: ...>>` form are scrubbed from activity fields."""
+    if not isinstance(session_dict, dict):
+        return session_dict
+    acts = session_dict.get('activities')
+    if isinstance(acts, list):
+        for a in acts:
+            if not isinstance(a, dict):
+                continue
+            for field in ('name', 'driving_focus', 'expected_learning', 'description'):
+                v = a.get(field)
+                if isinstance(v, str):
+                    for pat in _SLOT_TAG_PATTERNS:
+                        v = pat.sub('', v)
+                    a[field] = v.strip()
+    return session_dict
+
+
+def _slot_index_for(activity: dict) -> int:
+    """Return 0..4 for which of the 5 slots an activity looks like.
+    Returns -1 if no keyword match (i.e. AI used a slot-unaware name)."""
+    name = (activity.get('name', '') if isinstance(activity, dict) else '').lower()
+    for i, kws in enumerate(_LP_SLOT_KEYWORDS):
+        if any(kw in name for kw in kws):
+            return i
+    return -1
+
+
+def _synthesize_missing_activities(session_dict: dict, missing_fn, session_data: dict) -> dict:
+    """If the AI returned <5 activities, fill in the missing slot(s) using
+    `_LP_SLOT_TEMPLATES`. The synthesised slot for "Reflect & Apply" reuses
+    the AI's own `closure` + `portfolio_points` so the content stays
+    relevant to the project, not generic boilerplate."""
+    if not isinstance(session_dict, dict):
+        session_dict = {}
+    acts = list(session_dict.get('activities', []) or [])
+
+    # Figure out which slots are already covered.
+    covered = [False] * 5
+    slotted = [None] * 5  # the activity object in each slot, if recognised
+    leftover = []         # activities that didn't match any slot keyword
+    for a in acts:
+        idx = _slot_index_for(a)
+        if 0 <= idx < 5 and not covered[idx]:
+            covered[idx] = True
+            slotted[idx] = a
+        else:
+            leftover.append(a)
+
+    # Fill any remaining slots using leftover activities first (preserve
+    # AI content even if it didn't label cleanly), then templates.
+    for i in range(5):
+        if slotted[i] is None:
+            if leftover:
+                slotted[i] = leftover.pop(0)
+            else:
+                # Synthesise from template
+                tpl = dict(_LP_SLOT_TEMPLATES[i])  # shallow copy
+                # For Reflect & Apply, splice in the AI's closure + portfolio
+                if i == 4:
+                    closure_txt = (session_dict.get('closure') or '').strip()
+                    portfolio   = session_dict.get('portfolio_points') or []
+                    if closure_txt:
+                        tpl['description'] = (
+                            f"{tpl['description']}\n\n"
+                            f"**Closing reflection script:** {closure_txt}"
+                        )
+                    if portfolio:
+                        bullets = '\n'.join(f'- {p}' for p in portfolio)
+                        tpl['description'] += (
+                            f"\n\n**Portfolio entries students complete:**\n{bullets}"
+                        )
+                slotted[i] = tpl
+
+    # Append any extra leftover activities at the end (rare — keeps AI work)
+    final = [a for a in slotted if a] + leftover
+    session_dict['activities'] = final
+    return session_dict
+
+
 def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
                                    sessions_data, kb_questions, project_id,
                                    week_number):
@@ -147,7 +325,18 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
         final_acts = d.get('activities', []) if isinstance(d, dict) else []
         if len(final_acts) < 5:
             _log(project_id, 'WARN',
-                 f'{label_base} · still only {len(final_acts)} activities after retries')
+                 f'{label_base} · still only {len(final_acts)} activities '
+                 f'after retries — synthesising missing slot(s) locally')
+            d = _synthesize_missing_activities(d, _missing_slots, sd)
+            _log(project_id, 'INJECT',
+                 f'{label_base} · synthesised → now {len(d.get("activities", []))} activities')
+
+        # Strip any "[REQUIRED slot N — NAME]" placeholder that the AI
+        # left attached to activity names. The skeleton in the prompt uses
+        # this tag to mark each slot; AI sometimes keeps it instead of
+        # replacing it. We clean it up here so the DOCX shows just the
+        # human-readable title.
+        d = _strip_slot_placeholders(d)
 
         return (('session', idx), d, total_tok, None)
 
