@@ -342,11 +342,18 @@ per team, from lab inventory)", "Markers (assorted colours)").
 - activities: MUST be EXACTLY 5 separate activities. NOT 3, NOT 4, NOT 6 — \
 EXACTLY 5. Do NOT merge two activities into one even if the topic seems short. \
 Total time = ~80 minutes. The 5 slots are fixed (do not skip or combine):
-   [1] Hook (~12 min)         — open the session, spark curiosity
-   [2] Story/Context (~15 min) — narrative or framing that anchors the topic
+   [1] Hook (~12 min)             — open the session, spark curiosity
+   [2] Story/Context (~15 min)    — narrative or framing that anchors the topic
    [3] Mission/Investigate (~18 min) — students collect/observe/research
-   [4] Decoder/Make (~20 min) — students build, decode, or analyse
-   [5] Connect/Close (~15 min) — reflection, portfolio, closing circle
+   [4] Decoder/Make (~20 min)     — students build, decode, or analyse
+   [5] Reflect & Apply (~15 min)  — students synthesise what they learned: \
+share insights, link to their lives, set next-step goals, record portfolio \
+entry. This is a FULL student activity with its OWN driving_focus, \
+description, prompts, and facilitation_notes — NOT just a quick wrap-up. \
+IMPORTANT: This activity #5 is SEPARATE from the `closure` field below. \
+The `closure` field is a short teacher script (2-3 sentences) that runs \
+AFTER activity #5. You MUST include both: a full activity #5 in the \
+activities array AND a separate closure string.
    For EACH of the 5 activities:
    * driving_focus: 1-2 sentences (what this activity tries to spark/build).
    * expected_learning: 1-2 sentences naming the MSP competency it advances.

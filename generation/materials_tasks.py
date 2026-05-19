@@ -81,20 +81,55 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
         # ── Post-parse validation: enforce EXACTLY 5 activities ─────────
         # AI sometimes ignores "EXACTLY 5" — we auto-retry with a stricter
         # corrective prompt up to 2 times. Total max attempts: 3 (1 + 2).
+        slot_names = ['Hook', 'Story/Context', 'Mission/Investigate',
+                      'Decoder/Make', 'Reflect & Apply']
+
+        def _missing_slots(activities):
+            """Best-effort: return list of slot names that look missing
+            based on which keywords already appear in activity names."""
+            present_text = ' '.join(
+                (a.get('name', '') if isinstance(a, dict) else '').lower()
+                for a in (activities or [])
+            )
+            keywords = {
+                'Hook':                ['hook'],
+                'Story/Context':       ['story', 'context', 'narrative'],
+                'Mission/Investigate': ['mission', 'investigate', 'research', 'explore'],
+                'Decoder/Make':        ['decoder', 'make', 'build', 'create', 'design'],
+                'Reflect & Apply':     ['reflect', 'apply', 'close', 'synth', 'connect'],
+            }
+            missing = []
+            for slot, kws in keywords.items():
+                if not any(kw in present_text for kw in kws):
+                    missing.append(slot)
+            return missing
+
         for retry_n in range(1, 3):
             acts = d.get('activities', []) if isinstance(d, dict) else []
             if isinstance(acts, list) and len(acts) >= 5:
                 break  # success — 5 (or more) activities present
+            missing = _missing_slots(acts)
             _log(project_id, 'STREAM',
-                 f'{label_base} · only {len(acts)} activities returned, '
+                 f'{label_base} · only {len(acts)} activities returned '
+                 f'(missing: {missing or "?"}), '
                  f'auto-retry {retry_n}/2 with stricter instruction')
+            existing_names = '; '.join(
+                f"{i+1}. {a.get('name', '?')}"
+                for i, a in enumerate(acts) if isinstance(a, dict)
+            ) or '(none)'
             corrective = (
-                f"Your previous response had only {len(acts)} activities in "
-                "the `activities` array. This is INVALID. The Lesson Plan "
-                "MUST have EXACTLY 5 activities (Hook, Story, Mission, "
-                "Decoder, Close). Regenerate the FULL session JSON with "
-                "ALL 5 activities present. Do NOT merge or skip any slot."
-                "\n\n"
+                f"Your previous response had only {len(acts)} activities. "
+                f"The activities you returned were: {existing_names}.\n"
+                f"You are MISSING the following required slot(s): "
+                f"{', '.join(missing) if missing else 'one or more'}.\n"
+                "The lesson plan MUST contain ALL 5 activities — "
+                "[1] Hook, [2] Story/Context, [3] Mission/Investigate, "
+                "[4] Decoder/Make, [5] Reflect & Apply.\n"
+                "Regenerate the FULL session JSON with ALL 5 activities "
+                "present. Slot [5] Reflect & Apply is a FULL student "
+                "activity (~15 min) — students reflect, share, set goals, "
+                "or record portfolio entries. It is NOT the same as the "
+                "separate `closure` field. Include both.\n\n"
                 + user_p
             )
             try:
