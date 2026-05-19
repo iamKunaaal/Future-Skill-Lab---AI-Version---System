@@ -339,9 +339,15 @@ per team, from lab inventory)", "Markers (assorted colours)").
 - glossary: 3-4 key terms with 1-sentence student-friendly definitions.
 - learning_objectives: 2-3 entries, each tied to a specific competency.
 - learning_outcomes: 4-6 numbered, observable outcomes. Start with action verb.
-- activities: EXACTLY 5 timed activities adding up to ~80 minutes \
-(Hook 12 → Story/Context 15 → Mission/Investigate 18 → Decoder/Make 20 → \
-Connect/Close 15). For EACH activity:
+- activities: MUST be EXACTLY 5 separate activities. NOT 3, NOT 4, NOT 6 — \
+EXACTLY 5. Do NOT merge two activities into one even if the topic seems short. \
+Total time = ~80 minutes. The 5 slots are fixed (do not skip or combine):
+   [1] Hook (~12 min)         — open the session, spark curiosity
+   [2] Story/Context (~15 min) — narrative or framing that anchors the topic
+   [3] Mission/Investigate (~18 min) — students collect/observe/research
+   [4] Decoder/Make (~20 min) — students build, decode, or analyse
+   [5] Connect/Close (~15 min) — reflection, portfolio, closing circle
+   For EACH of the 5 activities:
    * driving_focus: 1-2 sentences (what this activity tries to spark/build).
    * expected_learning: 1-2 sentences naming the MSP competency it advances.
    * description: detailed, actionable steps in markdown. Multiple paragraphs \
@@ -357,7 +363,11 @@ in their portfolio this session. E.g. "Paste your mind map from Activity 3", \
 Use actual searchable URLs for Indian educational content, TED-Ed, CBSE resources.
 - India-grounded examples, grade-appropriate language.
 
-CRITICAL: portfolio_points MUST have 2-3 items. Do NOT return an empty list.
+CRITICAL — REREAD BEFORE RETURNING JSON:
+1. `activities` array MUST contain EXACTLY 5 items. Count them: 1, 2, 3, 4, 5. \
+Returning 3, 4, or 6 is invalid. Each of the 5 fixed slots (Hook, Story, \
+Mission, Decoder, Close) MUST be its own separate activity object.
+2. `portfolio_points` MUST have 2-3 items. Do NOT return an empty list.
 
 Return JSON exactly matching this schema:
 {LP_SESSION_SCHEMA}"""

@@ -59,21 +59,62 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
         label_base = f'W{week_number} · LP S{sd.get("number", idx + 1)}'
         sys_p, user_p = build_lp_session_prompt(
             project, week, weekly_brief, competencies, sd, kb_questions)
+
+        def _attempt(user_text, label):
+            return _call_with_json_retry(
+                user_text, system_prompt=sys_p, max_tokens=8000,
+                project_id=project_id, label=label)
+
+        # First attempt
         try:
-            d, tok = _call_with_json_retry(
-                user_p, system_prompt=sys_p, max_tokens=8000,
-                project_id=project_id, label=label_base)
-            return (('session', idx), d, tok, None)
+            d, tok = _attempt(user_p, label_base)
+            total_tok = tok
         except Exception as e:
             _log(project_id, 'STREAM',
                  f'{label_base} · failed once ({e}), retrying...')
             try:
-                d, tok = _call_with_json_retry(
-                    user_p, system_prompt=sys_p, max_tokens=8000,
-                    project_id=project_id, label=f'{label_base} retry')
-                return (('session', idx), d, tok, None)
+                d, tok = _attempt(user_p, f'{label_base} retry')
+                total_tok = tok
             except Exception as e2:
                 return (('session', idx), {}, 0, e2)
+
+        # ── Post-parse validation: enforce EXACTLY 5 activities ─────────
+        # AI sometimes ignores "EXACTLY 5" — we auto-retry with a stricter
+        # corrective prompt up to 2 times. Total max attempts: 3 (1 + 2).
+        for retry_n in range(1, 3):
+            acts = d.get('activities', []) if isinstance(d, dict) else []
+            if isinstance(acts, list) and len(acts) >= 5:
+                break  # success — 5 (or more) activities present
+            _log(project_id, 'STREAM',
+                 f'{label_base} · only {len(acts)} activities returned, '
+                 f'auto-retry {retry_n}/2 with stricter instruction')
+            corrective = (
+                f"Your previous response had only {len(acts)} activities in "
+                "the `activities` array. This is INVALID. The Lesson Plan "
+                "MUST have EXACTLY 5 activities (Hook, Story, Mission, "
+                "Decoder, Close). Regenerate the FULL session JSON with "
+                "ALL 5 activities present. Do NOT merge or skip any slot."
+                "\n\n"
+                + user_p
+            )
+            try:
+                d2, tok2 = _attempt(corrective, f'{label_base} count-retry {retry_n}')
+                total_tok += tok2
+                # Use the new response only if it has more activities
+                acts2 = d2.get('activities', []) if isinstance(d2, dict) else []
+                if isinstance(acts2, list) and len(acts2) > len(acts):
+                    d = d2
+            except Exception as ce:
+                _log(project_id, 'ERROR',
+                     f'{label_base} · count-retry {retry_n} failed: {ce}')
+                break  # don't keep hammering the API
+
+        final_acts = d.get('activities', []) if isinstance(d, dict) else []
+        if len(final_acts) < 5:
+            _log(project_id, 'WARN',
+                 f'{label_base} · still only {len(final_acts)} activities after retries')
+
+        return (('session', idx), d, total_tok, None)
 
     jobs = [_overview_job]
     for idx in range(n_sessions):
