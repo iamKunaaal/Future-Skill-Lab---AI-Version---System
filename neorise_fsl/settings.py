@@ -90,7 +90,14 @@ OPENROUTER_MODEL = env('OPENROUTER_MODEL', default='anthropic/claude-sonnet-4-5'
 # using APIYI_API_KEY + APIYI_LLM_MODEL. Set to 'openrouter' to use the
 # legacy OpenRouter path.
 LLM_PROVIDER   = env('LLM_PROVIDER',   default='apiyi')
-APIYI_LLM_MODEL = env('APIYI_LLM_MODEL', default='claude-sonnet-4-5-20250929')
+# Primary model for all LP/CC/PPT generation. Opus follows structural
+# constraints (e.g. EXACTLY 5 activities, schema fields) far more reliably
+# than Sonnet — worth the higher cost for content accuracy.
+APIYI_LLM_MODEL = env('APIYI_LLM_MODEL', default='claude-opus-4-1-20250805')
+# Fallback model — used by the augment-missing-activity path as a
+# last-resort safety net. Rarely fires now that the primary is Opus.
+APIYI_LLM_MODEL_FALLBACK = env('APIYI_LLM_MODEL_FALLBACK',
+                                default='claude-opus-4-1-20250805')
 
 # Unsplash (free stock photos for Phase 2 PPTs).
 # Sign up at https://unsplash.com/developers — free tier = 50 requests/hour.

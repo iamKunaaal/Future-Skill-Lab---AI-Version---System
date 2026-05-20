@@ -210,7 +210,9 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
     Each sub-call gets one in-band retry on exception so a single network
     blip doesn't drop a whole BP from the lesson plan.
     """
-    from .materials_prompts import build_lp_overview_prompt, build_lp_session_prompt
+    from .materials_prompts import (
+        build_lp_overview_prompt, build_lp_session_prompt, _project_header,
+    )
 
     n_sessions = min(len(sessions_data), 2)
 
@@ -239,8 +241,10 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
             project, week, weekly_brief, competencies, sd, kb_questions)
 
         def _attempt(user_text, label):
+            # 12000 tokens — descriptions ~3000 chars each × 5 activities +
+            # metadata + JSON overhead needs more headroom than 8000.
             return _call_with_json_retry(
-                user_text, system_prompt=sys_p, max_tokens=8000,
+                user_text, system_prompt=sys_p, max_tokens=12000,
                 project_id=project_id, label=label)
 
         # First attempt
@@ -282,54 +286,123 @@ def _generate_lesson_plan_parallel(project, week, weekly_brief, competencies,
                     missing.append(slot)
             return missing
 
+        # ── Augment-missing-activity fallback ──────────────────────────
+        # If primary model gave <5 activities, ask a STRONGER model (Opus)
+        # to generate ONLY the missing slot(s) — using the existing 4 as
+        # in-context style/tone reference so the new activity matches
+        # naturally (same Indian setting, named characters, etc.).
+        # Up to 2 augment attempts.
         for retry_n in range(1, 3):
             acts = d.get('activities', []) if isinstance(d, dict) else []
             if isinstance(acts, list) and len(acts) >= 5:
-                break  # success — 5 (or more) activities present
-            missing = _missing_slots(acts)
-            _log(project_id, 'STREAM',
-                 f'{label_base} · only {len(acts)} activities returned '
-                 f'(missing: {missing or "?"}), '
-                 f'auto-retry {retry_n}/2 with stricter instruction')
-            existing_names = '; '.join(
-                f"{i+1}. {a.get('name', '?')}"
-                for i, a in enumerate(acts) if isinstance(a, dict)
-            ) or '(none)'
-            corrective = (
-                f"Your previous response had only {len(acts)} activities. "
-                f"The activities you returned were: {existing_names}.\n"
-                f"You are MISSING the following required slot(s): "
-                f"{', '.join(missing) if missing else 'one or more'}.\n"
-                "The lesson plan MUST contain ALL 5 activities — "
-                "[1] Hook, [2] Story/Context, [3] Mission/Investigate, "
-                "[4] Decoder/Make, [5] Reflect & Apply.\n"
-                "Regenerate the FULL session JSON with ALL 5 activities "
-                "present. Slot [5] Reflect & Apply is a FULL student "
-                "activity (~15 min) — students reflect, share, set goals, "
-                "or record portfolio entries. It is NOT the same as the "
-                "separate `closure` field. Include both.\n\n"
-                + user_p
-            )
-            try:
-                d2, tok2 = _attempt(corrective, f'{label_base} count-retry {retry_n}')
-                total_tok += tok2
-                # Use the new response only if it has more activities
-                acts2 = d2.get('activities', []) if isinstance(d2, dict) else []
-                if isinstance(acts2, list) and len(acts2) > len(acts):
-                    d = d2
-            except Exception as ce:
-                _log(project_id, 'ERROR',
-                     f'{label_base} · count-retry {retry_n} failed: {ce}')
-                break  # don't keep hammering the API
+                break  # already 5 — nothing to add
 
-        final_acts = d.get('activities', []) if isinstance(d, dict) else []
-        if len(final_acts) < 5:
-            _log(project_id, 'WARN',
-                 f'{label_base} · still only {len(final_acts)} activities '
-                 f'after retries — synthesising missing slot(s) locally')
-            d = _synthesize_missing_activities(d, _missing_slots, sd)
-            _log(project_id, 'INJECT',
-                 f'{label_base} · synthesised → now {len(d.get("activities", []))} activities')
+            missing = _missing_slots(acts)
+            if not missing:
+                # Activities >= 5 expected by count, but len < 5? defensive
+                missing = ['Reflect & Apply']
+
+            target_slot = missing[0]  # add one slot at a time
+            slot_briefs = {
+                'Hook':                'Position 1 (~12 min) — opening activity that sparks curiosity. Name it CREATIVELY based on what students will DO (no "The Hook:" prefix).',
+                'Story/Context':       'Position 2 (~15 min) — narrative/framing with named Indian characters or organisations. Name it CREATIVELY (no "The Story:" prefix).',
+                'Mission/Investigate': 'Position 3 (~18 min) — students collect/observe/research evidence in teams. Name it CREATIVELY (no "The Mission:" prefix).',
+                'Decoder/Make':        'Position 4 (~20 min) — students build/decode/analyse something tangible. Name it CREATIVELY (no "The Decoder:" prefix).',
+                'Reflect & Apply':     'Position 5 (~15 min) — students synthesise the session, link to their lives, set next-step goals, complete a portfolio entry. FULL activity, not a wrap-up. Name it CREATIVELY (no "Reflect & Apply:" prefix).',
+            }
+            brief = slot_briefs.get(target_slot, '')
+
+            _log(project_id, 'STREAM',
+                 f'{label_base} · {len(acts)} activities returned, missing '
+                 f'{target_slot} — augmenting with fallback model '
+                 f'(attempt {retry_n}/2)')
+
+            import json as _json
+            existing_json = _json.dumps(acts, indent=2)[:6000]
+            closure_txt   = (d.get('closure') or '') if isinstance(d, dict) else ''
+            portfolio_txt = (d.get('portfolio_points') or []) if isinstance(d, dict) else []
+
+            augment_prompt = f"""Another model generated {len(acts)} \
+activities for a Lesson Plan session, but the session requires EXACTLY 5 \
+activities. ONE slot is missing: {target_slot}.
+
+Your job: produce ONE NEW activity for the missing slot — written in the \
+same voice, style, and concrete-Indian-context as the existing activities. \
+Re-use named characters / settings / brands that already appear so the \
+session reads as ONE cohesive lesson plan, not a stitched-together one.
+
+PROJECT CONTEXT:
+{_project_header(project, week)}
+
+SESSION CONTEXT (already approved description):
+{(sd.get('ai_description', '') or '')[:1500]}
+
+EXISTING {len(acts)} ACTIVITIES (use these as the style/tone reference):
+{existing_json}
+
+EXISTING CLOSURE (teacher script that runs AFTER your new activity):
+{closure_txt}
+
+EXISTING PORTFOLIO POINTS:
+{', '.join(portfolio_txt) if portfolio_txt else '(none)'}
+
+REQUIRED MISSING SLOT:
+{brief}
+
+REQUIREMENTS:
+- Produce ONE activity object that fills the missing slot.
+- Match the style/voice/tone of the existing activities exactly.
+- Reuse character names, school/locale, examples from existing activities \
+where natural — the new activity must feel like the same author wrote it.
+- Include all fields: name, duration, driving_focus, expected_learning, \
+description, discussion_prompts, facilitation_notes.
+- For Reflect & Apply specifically: tie back to the project's specific \
+context (the named characters, the project deliverable, the local setting).
+
+Return JSON in this shape (ONLY the activity object, nothing else):
+{{
+  "activity": {{
+    "name": "<descriptive activity title — match the existing style>",
+    "duration": "<e.g. 15 min>",
+    "driving_focus": "...",
+    "expected_learning": "...",
+    "description": "...",
+    "discussion_prompts": ["...", "..."],
+    "facilitation_notes": "..."
+  }}
+}}"""
+            try:
+                fallback_model = getattr(settings,
+                                         'APIYI_LLM_MODEL_FALLBACK', None)
+                new_one, tok_aug = _call_with_json_retry(
+                    augment_prompt, system_prompt=sys_p, max_tokens=3500,
+                    project_id=project_id,
+                    label=f'{label_base} augment-{target_slot}',
+                    model_override=fallback_model,
+                )
+                total_tok += tok_aug
+                added = new_one.get('activity') if isinstance(new_one, dict) else None
+                if not isinstance(added, dict):
+                    # Some models wrap differently — try top-level
+                    added = new_one if isinstance(new_one, dict) and 'name' in new_one else None
+                if isinstance(added, dict) and added.get('name'):
+                    # Insert at correct slot position (Reflect at end, Hook at start, etc.)
+                    slot_order = ['Hook', 'Story/Context', 'Mission/Investigate',
+                                  'Decoder/Make', 'Reflect & Apply']
+                    target_pos = slot_order.index(target_slot) if target_slot in slot_order else len(acts)
+                    target_pos = min(target_pos, len(acts))
+                    acts.insert(target_pos, added)
+                    d['activities'] = acts
+                    _log(project_id, 'INJECT',
+                         f'{label_base} · augmented {target_slot} → '
+                         f'{len(acts)} activities now')
+                else:
+                    _log(project_id, 'WARN',
+                         f'{label_base} · augment response missing activity object')
+            except Exception as ae:
+                _log(project_id, 'ERROR',
+                     f'{label_base} · augment-{target_slot} failed: {ae}')
+                break
 
         # Strip any "[REQUIRED slot N — NAME]" placeholder that the AI
         # left attached to activity names. The skeleton in the prompt uses
@@ -555,16 +628,21 @@ def _log(project_id: int, level: str, message: str):
 def _call_with_json_retry(user_prompt: str, system_prompt: str = '',
                           max_tokens: int = 4096,
                           retries: int = 3, project_id: int = 0,
-                          label: str = '') -> tuple[dict, int]:
+                          label: str = '',
+                          model_override: str | None = None) -> tuple[dict, int]:
     """Call OpenRouter expecting JSON, with self-healing retry on parse fail.
 
     Returns (parsed_dict, total_tokens). On parse failure, asks the model to
     return ONLY the corrected JSON. Up to `retries` repair attempts.
 
     Uses `response_format: json_object` (OpenAI structured JSON mode) so
-    the provider enforces valid JSON, sharply reducing parse failures."""
+    the provider enforces valid JSON, sharply reducing parse failures.
+
+    `model_override` lets the caller pick a stronger model (e.g. Opus) for
+    a specific call — used for the "augment missing activity" fallback."""
     text, tok = _call_openrouter(user_prompt, system_prompt=system_prompt,
-                                 max_tokens=max_tokens, json_mode=True)
+                                 max_tokens=max_tokens, json_mode=True,
+                                 model_override=model_override)
     total_tokens = tok
     last_err = None
 

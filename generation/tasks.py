@@ -31,7 +31,8 @@ def _log(project, level, message):
 
 def _call_openrouter(prompt: str, system_prompt: str = '',
                      max_tokens: int = 4096, temperature: float = 0.72,
-                     json_mode: bool = False) -> tuple[str, int]:
+                     json_mode: bool = False,
+                     model_override: str | None = None) -> tuple[str, int]:
     """Call the configured LLM provider, return (response_text, total_tokens).
 
     Routes through APIYI by default (LLM_PROVIDER=apiyi). Falls back to
@@ -48,14 +49,14 @@ def _call_openrouter(prompt: str, system_prompt: str = '',
         api_key  = settings.APIYI_API_KEY
         base_url = settings.APIYI_BASE_URL.rstrip('/')
         url      = f'{base_url}/chat/completions'
-        model    = settings.APIYI_LLM_MODEL
+        model    = model_override or settings.APIYI_LLM_MODEL
         headers  = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type':  'application/json',
         }
     else:
         url    = 'https://openrouter.ai/api/v1/chat/completions'
-        model  = settings.OPENROUTER_MODEL
+        model  = model_override or settings.OPENROUTER_MODEL
         headers = {
             'Authorization': f'Bearer {settings.OPENROUTER_API_KEY}',
             'Content-Type':  'application/json',

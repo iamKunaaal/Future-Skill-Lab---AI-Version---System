@@ -234,49 +234,49 @@ LP_SESSION_SCHEMA = """{
   "learning_outcomes":   ["Numbered observable outcomes — 4-6 items. Each starts with action verb (Identify, Explain, Compare, Reflect...)."],
   "activities": [
     {
-      "name":               "<<REPLACE: full activity title for slot 1 HOOK, e.g. 'The Hook: Scroll & Spot'>>",
+      "name":               "<<REPLACE: creative project-specific title (e.g. 'The Invisible Voices Experiment'). NO generic prefix like 'The Hook:' or 'Activity 1:'. Just the engaging title.>>",
       "duration":           "12 min",
-      "driving_focus":      "1-2 sentences — what this activity is trying to spark/build",
+      "driving_focus":      "1-2 sentences — what this opening activity is trying to spark/build",
       "expected_learning":  "1-2 sentences — names the MSP competency",
-      "description":        "Detailed instructions — markdown supported. Multiple paragraphs OK.",
-      "discussion_prompts": ["2-4 prompts students discuss during the activity"],
-      "facilitation_notes": "Teacher cues: what to watch for, misconceptions"
+      "description":        "DETAILED 250-400 words (1500-2500 chars). Step-by-step teacher script with timing breakdown (e.g. '0-3 min: ...', '3-8 min: ...'). Include specific dialogue/questions teacher asks, what students do at each step, materials handed out, board work. Multi-paragraph markdown. Reference real Indian brands/people/places.",
+      "discussion_prompts": ["3-4 prompts students discuss during the activity"],
+      "facilitation_notes": "4-6 sentences (60-100 words). Teacher cues: specific things to watch for, common misconceptions, concrete intervention prompts."
     },
     {
-      "name":               "<<REPLACE: full activity title for slot 2 STORY/CONTEXT, e.g. 'The Story: Meet Meera'>>",
+      "name":               "<<REPLACE: creative project-specific title for a story/context-setting activity. NO 'The Story:' prefix.>>",
       "duration":           "15 min",
       "driving_focus":      "1-2 sentences",
       "expected_learning":  "1-2 sentences",
-      "description":        "Narrative or framing that anchors the topic",
-      "discussion_prompts": ["2-4 prompts"],
-      "facilitation_notes": "Teacher cues"
+      "description":        "DETAILED 300-450 words (1800-2700 chars) for a 15-min activity. Narrative or framing that anchors the topic, with a NAMED Indian character/organisation and concrete real-world example. Include timing breakdown, teacher dialogue, student tasks, and what gets displayed on the board.",
+      "discussion_prompts": ["3-4 prompts"],
+      "facilitation_notes": "4-6 sentences (60-100 words). Specific cues."
     },
     {
-      "name":               "<<REPLACE: full activity title for slot 3 MISSION/INVESTIGATE>>",
+      "name":               "<<REPLACE: creative project-specific title for an investigation/inquiry activity. NO 'The Mission:' prefix.>>",
       "duration":           "18 min",
       "driving_focus":      "1-2 sentences",
       "expected_learning":  "1-2 sentences",
-      "description":        "Students collect / observe / research",
-      "discussion_prompts": ["2-4 prompts"],
-      "facilitation_notes": "Teacher cues"
+      "description":        "DETAILED 350-500 words (2200-3500 chars) for an 18-min activity. Students collect/observe/research evidence in groups. Provide an explicit capture sheet/template (list the columns or fields). Include timing breakdown, group formation, roles, and what data students bring back.",
+      "discussion_prompts": ["3-4 prompts"],
+      "facilitation_notes": "4-6 sentences (60-100 words). Specific cues."
     },
     {
-      "name":               "<<REPLACE: full activity title for slot 4 DECODER/MAKE>>",
+      "name":               "<<REPLACE: creative project-specific title for a make/build/decode activity. NO 'The Decoder:' prefix.>>",
       "duration":           "20 min",
       "driving_focus":      "1-2 sentences",
       "expected_learning":  "1-2 sentences",
-      "description":        "Students build, decode, or analyse",
-      "discussion_prompts": ["2-4 prompts"],
-      "facilitation_notes": "Teacher cues"
+      "description":        "DETAILED 400-550 words (2500-4000 chars) for a 20-min activity. Students build/decode/analyse something tangible with a clear deliverable format. Include timing breakdown, step-by-step build instructions, what gets displayed at end (gallery walk, share-out), and what the teacher does during work time.",
+      "discussion_prompts": ["3-4 prompts"],
+      "facilitation_notes": "4-6 sentences (60-100 words). Specific cues."
     },
     {
-      "name":               "<<REPLACE: full activity title for slot 5 REFLECT & APPLY, e.g. 'Connecting Careers & Portfolio Reflection'>>",
+      "name":               "<<REPLACE: creative project-specific title for a reflection/synthesis activity. NO 'Reflect & Apply:' prefix.>>",
       "duration":           "15 min",
       "driving_focus":      "1-2 sentences — what this synthesis activity is for",
       "expected_learning":  "1-2 sentences",
-      "description":        "Students synthesise what they learned — share insights, link to their lives, set next-step goals, complete a portfolio entry. This is a FULL activity with detailed steps, NOT just a 1-line wrap-up.",
-      "discussion_prompts": ["2-4 reflection prompts (e.g. 'What surprised you today?')"],
-      "facilitation_notes": "How to run the closing reflection"
+      "description":        "DETAILED 300-450 words (1800-2700 chars) for a 15-min activity. Students synthesise the session — share insights, link to their lives, set next-step goals, write/paste a portfolio entry. Include exact reflection prompts students answer, the format of the portfolio entry (e.g. 'one paragraph + one sketch'), how the closing circle runs.",
+      "discussion_prompts": ["3-4 reflection prompts"],
+      "facilitation_notes": "4-6 sentences (60-100 words). How to run the closing reflection."
     }
   ]
 }"""
@@ -375,21 +375,45 @@ per team, from lab inventory)", "Markers (assorted colours)").
 - glossary: 3-4 key terms with 1-sentence student-friendly definitions.
 - learning_objectives: 2-3 entries, each tied to a specific competency.
 - learning_outcomes: 4-6 numbered, observable outcomes. Start with action verb.
-- activities: MUST be EXACTLY 5 separate activities. NOT 3, NOT 4, NOT 6 — \
-EXACTLY 5. Do NOT merge two activities into one even if the topic seems short. \
-Total time = ~80 minutes. The 5 slots are fixed (do not skip or combine):
-   [1] Hook (~12 min)             — open the session, spark curiosity
-   [2] Story/Context (~15 min)    — narrative or framing that anchors the topic
-   [3] Mission/Investigate (~18 min) — students collect/observe/research
-   [4] Decoder/Make (~20 min)     — students build, decode, or analyse
-   [5] Reflect & Apply (~15 min)  — students synthesise what they learned: \
-share insights, link to their lives, set next-step goals, record portfolio \
-entry. This is a FULL student activity with its OWN driving_focus, \
-description, prompts, and facilitation_notes — NOT just a quick wrap-up. \
-IMPORTANT: This activity #5 is SEPARATE from the `closure` field below. \
-The `closure` field is a short teacher script (2-3 sentences) that runs \
-AFTER activity #5. You MUST include both: a full activity #5 in the \
-activities array AND a separate closure string.
+- activities: MUST be EXACTLY 5 separate activities totalling ~80 minutes. \
+Each activity's PURPOSE follows this flow (but name them CREATIVELY based \
+on the project content — do NOT use generic prefixes like "The Hook:", \
+"The Story:", "The Mission:", "The Decoder:", "Reflect & Apply:"):
+   #1 (~12 min) — opening activity that sparks curiosity / surfaces prior \
+experience for the session topic.
+   #2 (~15 min) — narrative or context-setting activity using a NAMED Indian \
+character, organisation, or real example to anchor the topic.
+   #3 (~18 min) — investigation activity where students collect, observe, \
+or research evidence relevant to the topic.
+   #4 (~20 min) — making/decoding activity where students build, analyse, \
+or produce something concrete using what they collected.
+   #5 (~15 min) — closing synthesis activity where students reflect, link \
+to their lives, set next-step goals, and complete a portfolio entry. \
+This is a FULL student activity with its own driving_focus, description, \
+prompts, and facilitation_notes — NOT just a wrap-up sentence. It is \
+SEPARATE from the `closure` field below (closure = 2-3 sentence teacher \
+script that runs AFTER activity #5).
+Naming: give each activity an engaging, project-specific title that \
+reflects what students actually DO. Examples for a school radio project: \
+"The Invisible Voices Experiment", "Priya's Problem & The Radio Revolution", \
+"Voice Map Creation", "Smart Listening & Portfolio Launch". Do NOT prefix \
+with "The Hook:" / "The Story:" / etc.
+For each activity's facilitation_notes: write 4-6 sentences (60-100 words) \
+covering (1) what to watch for, (2) common student misconceptions, (3) \
+specific intervention prompts, (4) groupings/management tips.
+
+ACTIVITY DESCRIPTION LENGTH RULE — STRICT:
+Each activity's `description` must be SUBSTANTIAL enough to actually fill \
+its duration. Use roughly 25 words PER MINUTE of activity duration as a \
+floor. So:
+- 12-min activity: minimum 300 words (~1800 chars) of description
+- 15-min activity: minimum 375 words (~2200 chars)
+- 18-min activity: minimum 450 words (~2700 chars)
+- 20-min activity: minimum 500 words (~3000 chars)
+A teacher should be able to read the description and run the entire \
+activity from it — including teacher dialogue, timing breakdown, student \
+groupings, and the deliverable. Short / outline-style descriptions are \
+INVALID; they must be detailed step-by-step.
    For EACH of the 5 activities:
    * driving_focus: 1-2 sentences (what this activity tries to spark/build).
    * expected_learning: 1-2 sentences naming the MSP competency it advances.
